@@ -16,6 +16,6 @@ copy with `ctrl + c`, and paste with `ctrl + c`.
 
 ### Problems/caveats
 - Pasting works fine, although copying is mostly broken,
-save for within the same file and a select few programs.
+save for within texi and a select few programs.
 - When the screen redraws, there is some degree of flickering, hopefully not too much.
 - texi lacks undo functionality, although this is not a bug.
