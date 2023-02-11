@@ -19,3 +19,7 @@ copy with `ctrl + c`, and paste with `ctrl + c`.
 save for within texi and a select few programs.
 - When the screen redraws, there is some degree of flickering, hopefully not too much.
 - texi lacks undo functionality, although this is not a bug.
+
+## Thanks
+- Thanks to to [jtanx](https://github.com/jtanx) for their [libclipboard](https://github.com/jtanx/libclipboard) library which I borrowed (stole) from.
+- And also to étale-cohomology for their Stack Overflow [answer](https://stackoverflow.com/a/72977399) about getting started with the clipboard.
