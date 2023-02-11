@@ -23,7 +23,7 @@ it to /usr/local/bin by running `make install` as root.
 ### Requirements
 - xcb
 - xcb-keysyms
-- terminus font
+- terminus font for X
 
 ## Thanks
 - Thanks to to [jtanx](https://github.com/jtanx) for their [libclipboard](https://github.com/jtanx/libclipboard) library which I borrowed (stole) from.
