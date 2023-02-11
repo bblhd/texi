@@ -20,6 +20,11 @@ save for within texi and a select few programs.
 Compile using `make` or `make compile`, and then install
 it to /usr/local/bin by running `make install` as root.
 
+### Requirements
+- xcb
+- xcb-keysyms
+- terminus font
+
 ## Thanks
 - Thanks to to [jtanx](https://github.com/jtanx) for their [libclipboard](https://github.com/jtanx/libclipboard) library which I borrowed (stole) from.
 - And also to étale-cohomology for their Stack Overflow [answer](https://stackoverflow.com/a/72977399) about getting started with the clipboard.
