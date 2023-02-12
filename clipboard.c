@@ -1,4 +1,4 @@
-//code adapted from https://stackoverflow.com/questions/37295904/clipboard-and-xcb
+//code adapted from https://stackoverflow.com/questions/37295904/clipboard-and-xcb and https://github.com/jtanx/libclipboard
 //resource: https://www.x.org/releases/X11R7.6/doc/xorg-docs/specs/ICCCM/icccm.html#peer_to_peer_communication_by_means_of_selections
 
 #include <stdlib.h>
@@ -51,6 +51,7 @@ void clipboard_init(xcb_connection_t *connection, xcb_window_t window, char *lab
 	property = getAtomReply(propertyCookie);
 }
 
+//clipboard_get: reads the clipboard from its current owner, copying it to the provided buffer
 size_t clipboard_get(char *str, size_t length) {
 	xcb_convert_selection(
 		clipboard.connection, clipboard.window, atoms[selection], 
@@ -84,6 +85,7 @@ size_t clipboard_get(char *str, size_t length) {
 	return length;
 }
 
+//clipboard_set: takes ownership of the clipboard and caches the given string, which will later be provided to those requesting data from the clipboard
 void clipboard_set(char *str, size_t length) {
 	if (clipboard.source) free(clipboard.source);
 	clipboard.source = malloc(length);
@@ -93,6 +95,7 @@ void clipboard_set(char *str, size_t length) {
 	xcb_flush(clipboard.connection);
 }
 
+//clipboard_selectionRequest: handles a selection request event and passes the clipboard data to the requestor, sends the selection notify event afterwards 
 void clipboard_selectionRequest(xcb_selection_request_event_t *event) {
 	if (event->property == XCB_NONE) event->property = event->target;
 	
