@@ -8,12 +8,11 @@ Use arrows to move cursor, and hold shift while doing it
 to change the selection. You can also move the cursor by
 clicking on text, and change the selection by releasing
 somewhere else. You can save changes by pressing `ctrl + s`,
-copy with `ctrl + c`, and paste with `ctrl + c`. 
+copy with `ctrl + c`, cut with `ctrl + x`, and paste with `ctrl + v`. 
 
 ### Problems/caveats
-- Pasting works fine, although copying is mostly broken,
-save for within texi and a select few programs.
-- When the screen redraws, there is some degree of flickering, hopefully not too much.
+- When the screen redraws, there is some degree of flickering,
+hopefully not too much.
 - texi lacks undo functionality, although this is not a bug.
 
 ## Installing
