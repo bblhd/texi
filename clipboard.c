@@ -9,39 +9,52 @@
 #include <xcb/xcb.h>
 #include <xcb/xproto.h>
 
+enum ClipboardAtom {CLIPBOARD, TARGETS, STRING, UTF8_STRING, UTF8_PLAINTEXT, ATOM_END};
+const char *atomNames[ATOM_END] = {"CLIPBOARD", "TARGETS", "STRING", "UTF8_STRING", "text/plain;charset=utf-8"};
+xcb_atom_t atoms[ATOM_END];
+
+xcb_atom_t property;
+
+const enum ClipboardAtom selection = CLIPBOARD;
+
 struct {
-  xcb_connection_t *connection;
-  xcb_window_t window;
-  
-  xcb_atom_t selection;
-  xcb_atom_t property;
-  
-  char *source;
-  size_t length;
+	xcb_connection_t *connection;
+	xcb_window_t window;
+	
+	char *source;
+	size_t length;
 } clipboard;
+
+xcb_atom_t getAtomReply(xcb_intern_atom_cookie_t cookie) {
+	xcb_intern_atom_reply_t* reply = xcb_intern_atom_reply(clipboard.connection, cookie, NULL);
+	xcb_atom_t atom = reply ? reply->atom : XCB_NONE;
+	free(reply);
+	return atom;
+}
 
 void clipboard_init(xcb_connection_t *connection, xcb_window_t window, char *label) {
 	clipboard.connection = connection;
 	clipboard.window = window;
 	clipboard.source = NULL;
 	
-    xcb_intern_atom_cookie_t cookie_selection = xcb_intern_atom(clipboard.connection, 0, 9, "CLIPBOARD");
-    xcb_intern_atom_cookie_t cookie_property = xcb_intern_atom(clipboard.connection, 0, 9, label);
-    
-    xcb_intern_atom_reply_t* reply_selection  = xcb_intern_atom_reply(clipboard.connection, cookie_selection, NULL);
-    xcb_intern_atom_reply_t* reply_property   = xcb_intern_atom_reply(clipboard.connection, cookie_property, NULL);
-    
-    clipboard.selection = reply_selection->atom;
-    clipboard.property = reply_property->atom;
-    
-    free(reply_selection);
-    free(reply_property);
+	xcb_intern_atom_cookie_t propertyCookie = xcb_intern_atom(clipboard.connection, 0, strlen(label), label);
+	
+	xcb_intern_atom_cookie_t atomCookies[ATOM_END];
+	for (int i = 0; i < ATOM_END; i++) {
+		atomCookies[i] = xcb_intern_atom(clipboard.connection, 0, strlen(atomNames[i]), atomNames[i]);
+	}
+	
+	for (int i = 0; i < ATOM_END; i++) {
+		atoms[i] = getAtomReply(atomCookies[i]);
+	}
+	
+	property = getAtomReply(propertyCookie);
 }
 
 size_t clipboard_get(char *str, size_t length) {
 	xcb_convert_selection(
-		clipboard.connection, clipboard.window, clipboard.selection, 
-		XCB_ATOM_STRING, clipboard.property,
+		clipboard.connection, clipboard.window, atoms[selection], 
+		XCB_ATOM_STRING, property,
 		XCB_CURRENT_TIME
 	);
 	xcb_flush(clipboard.connection);
@@ -52,7 +65,7 @@ size_t clipboard_get(char *str, size_t length) {
 		clipboard.connection,
 		xcb_get_property(
 			clipboard.connection, 0, clipboard.window,
-			clipboard.property, XCB_ATOM_STRING,
+			property, atoms[STRING],
 			0, length
 		),
 		NULL
@@ -67,7 +80,7 @@ size_t clipboard_get(char *str, size_t length) {
 		memcpy(str, clipboard.source, length);
 	}
 	
-	xcb_delete_property(clipboard.connection, clipboard.window, clipboard.property);
+	xcb_delete_property(clipboard.connection, clipboard.window, property);
 	return length;
 }
 
@@ -76,27 +89,40 @@ void clipboard_set(char *str, size_t length) {
 	clipboard.source = malloc(length);
 	clipboard.length = length;
 	memcpy(clipboard.source, str, clipboard.length);
-    xcb_set_selection_owner(clipboard.connection, clipboard.window, clipboard.selection, XCB_CURRENT_TIME);
+	xcb_set_selection_owner(clipboard.connection, clipboard.window, atoms[selection], XCB_CURRENT_TIME);
 	xcb_flush(clipboard.connection);
 }
 
 void clipboard_selectionRequest(xcb_selection_request_event_t *event) {
-    if (event->property == XCB_NONE) event->property = event->target;
-    
-	xcb_change_property(
-		clipboard.connection, XCB_PROP_MODE_REPLACE,
-		event->requestor, event->property,
-		XCB_ATOM_STRING, 8, clipboard.length, clipboard.source
-	);
-    
+	if (event->property == XCB_NONE) event->property = event->target;
+	
+	//printf("target atom %u recieved\n", event->target); // used for debugging
+	if (event->target == atoms[TARGETS]) {
+		xcb_atom_t targets[] = {atoms[TARGETS], atoms[STRING], atoms[UTF8_STRING], atoms[UTF8_PLAINTEXT]};
+		xcb_change_property(
+			clipboard.connection, XCB_PROP_MODE_REPLACE,
+			event->requestor, event->property,
+			XCB_ATOM_ATOM, sizeof(xcb_atom_t) * 8, sizeof(targets) / sizeof(xcb_atom_t), targets
+		);
+	} else if (event->target == atoms[STRING] || event->target == atoms[UTF8_STRING] || event->target == atoms[UTF8_PLAINTEXT]) {
+		xcb_change_property(
+			clipboard.connection, XCB_PROP_MODE_REPLACE,
+			event->requestor, event->property,
+			event->target, 8, clipboard.length, clipboard.source
+		);
+	} else {
+		xcb_flush(clipboard.connection);
+		return;
+	}
+	
 	xcb_send_event(
-		clipboard.connection, 0, event->requestor, XCB_EVENT_MASK_PROPERTY_CHANGE,
+		clipboard.connection, 0, event->requestor, 0,
 		(char *) &(xcb_selection_notify_event_t) {
 			.response_type = XCB_SELECTION_NOTIFY,
 			.time = XCB_CURRENT_TIME,
 			.requestor = event->requestor,
 			.selection = event->selection,
-			.target = XCB_ATOM_STRING,
+			.target = event->target,
 			.property = event->property
 		}
 	);

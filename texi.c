@@ -32,8 +32,8 @@ xcb_drawable_t window;
 
 xcb_atom_t wm_delete_window_atom;
 
-const uint32_t fgDefault = 0xffffffff;
-const uint32_t bgDefault = 0xff000000;
+const uint32_t fgDefault = 0xff000000;
+const uint32_t bgDefault = 0xffffffff;
 
 const uint32_t fgCursor = bgDefault;
 const uint32_t bgCursor = fgDefault;
@@ -247,6 +247,9 @@ void handleKeypress(xcb_key_press_event_t *event) {
 		} else if (keysym == XK_v) {
 			char buffer[1024];
 			selected = cursor = documentInsert(documentDeleteSelection(), clipboard_get(buffer, 1024), buffer);
+		} else if (keysym == XK_x) {
+			clipboard_set(document+(cursor<selected ? cursor : selected), selected>cursor ? selected-cursor : cursor-selected);
+			documentDeleteSelection();
 		} else if (keysym == XK_s) {
 			saveDocument(documentPath);
 		}
