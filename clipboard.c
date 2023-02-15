@@ -52,7 +52,7 @@ void clipboard_init(xcb_connection_t *connection, xcb_window_t window, char *lab
 }
 
 //clipboard_get: reads the clipboard from its current owner, copying it to the provided buffer
-size_t clipboard_get(char *str, size_t length) {
+size_t clipboard_get(char *str, size_t length, size_t offset) {
 	xcb_convert_selection(
 		clipboard.connection, clipboard.window, atoms[selection], 
 		XCB_ATOM_STRING, property,
@@ -67,7 +67,7 @@ size_t clipboard_get(char *str, size_t length) {
 		xcb_get_property(
 			clipboard.connection, 0, clipboard.window,
 			property, atoms[STRING],
-			0, length
+			offset/4, length/4
 		),
 		NULL
 	);

@@ -2,7 +2,7 @@ name:=texi
 dest:=/usr/local/bin
 
 compile: 
-	gcc -Wall -Wextra -Werror -lxcb -lxcb-keysyms -o $(name) texi.c clipboard.c
+	gcc -Wall -Wextra -Werror -Wno-char-subscripts -lxcb -lxcb-keysyms -o $(name) texi.c clipboard.c
 
 install:
 	mkdir -p $(dest)

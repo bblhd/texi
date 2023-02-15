@@ -1,6 +1,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <stdarg.h>
 
 #include <xcb/xcb.h>
 #include <xcb/xproto.h>
@@ -12,9 +13,19 @@
 #define XK_LATIN1
 #include <X11/keysymdef.h>
 
-xcb_key_symbols_t *keySymbols;
+typedef _Bool bool;
+#define TRUE 1
+#define FALSE 0
 
 #define DOC_SIZE_STEP_SIZE 4096
+
+xcb_connection_t *connection;
+xcb_gcontext_t graphics;
+xcb_window_t root;
+xcb_drawable_t window;
+xcb_key_symbols_t *keySymbols;
+
+xcb_atom_t wm_delete_window_atom;
 
 char *documentPath = NULL;
 size_t documentAllocatedSize = 0;
@@ -24,13 +35,6 @@ size_t scroll = 0;
 int cachedScrollLine = 0;
 int cursor = 0;
 int selected = 0;
-
-xcb_connection_t *connection;
-xcb_gcontext_t graphics;
-xcb_window_t root;
-xcb_drawable_t window;
-
-xcb_atom_t wm_delete_window_atom;
 
 const uint32_t fgDefault = 0xff000000;
 const uint32_t bgDefault = 0xffffffff;
@@ -44,13 +48,26 @@ const uint32_t bgSelected = 0xff0000ff;
 uint32_t oldBG = 0;
 uint32_t oldFG = 0;
 
-#define LINEBUFFER 38
-#define LINEHEIGHT 14
+struct {
+	uint16_t width, height;
+} dimensions;
+
+uint16_t linegutter = 0;
+uint16_t lineoffset = 0;
+uint16_t lineheight = 0;
+
+struct AsciiEntry {
+	uint16_t advance;
+	xcb_char2b_t string[7];
+	uint8_t length;
+} ascii[0x81];
 
 void die(char *msg);
 
 void loadDocument(char *path);
 void loadDocumentFromString(char *string);
+
+void loadFont(char *fontname);
 
 void handleButtonPress(xcb_button_press_event_t *event);
 void handleButtonRelease(xcb_button_release_event_t *event);
@@ -61,6 +78,10 @@ void drawText(char *text, int cursor, int selected);
 size_t lengthOfDisplayedText(char *text);
 size_t getMouseOnText(char *text, uint16_t mx, uint16_t my);
 
+void clear();
+void getDimensions();
+void setColor(uint32_t fg, uint32_t bg);
+
 int main(int argc, char **argv) {
 	connection = xcb_connect(NULL, NULL);
 	xcb_screen_t *screen = xcb_setup_roots_iterator(xcb_get_setup(connection)).data;
@@ -69,19 +90,15 @@ int main(int argc, char **argv) {
 	xcb_intern_atom_reply_t* atom_reply = xcb_intern_atom_reply(connection, xcb_intern_atom(connection, 0, 16, "WM_DELETE_WINDOW"), 0);
 	wm_delete_window_atom = atom_reply->atom;
 	free(atom_reply);
-	
-	const char *fontname = "-xos4-terminus-medium-r-normal--14-140-72-72-c-0-iso10646-1";
-	xcb_font_t font = xcb_generate_id(connection);
-    xcb_open_font(connection, font, strlen(fontname), fontname);
     
 	graphics = xcb_generate_id(connection);
 	xcb_create_gc(
 		connection, graphics, screen->root,
-		XCB_GC_FOREGROUND | XCB_GC_BACKGROUND | XCB_GC_FONT | XCB_GC_GRAPHICS_EXPOSURES,
-		(uint32_t[]) {screen->black_pixel, screen->white_pixel, font, 1}
+		XCB_GC_FOREGROUND | XCB_GC_BACKGROUND | XCB_GC_GRAPHICS_EXPOSURES,
+		(uint32_t[]) {screen->black_pixel, screen->white_pixel, 1}
 	);
-	
-	xcb_close_font(connection, font);
+	//loadFont("-xos4-terminus-medium-r-normal--14-140-72-72-c-80-iso10646-1");
+	loadFont("lucidasans-8");
 	
 	window = xcb_generate_id(connection);
 	xcb_create_window(
@@ -101,6 +118,9 @@ int main(int argc, char **argv) {
 	xcb_map_window(connection, window);
 	
 	if (argc > 1) documentPath = argv[1];
+	if (documentPath) loadDocument(documentPath);
+	else loadDocumentFromString("This is a scratch document, it isn't from a file, and thus wont be saved anywhere.");
+	
 	char *windowTitle = documentPath ? documentPath : "scratch";
 	xcb_change_property (
 		connection, XCB_PROP_MODE_REPLACE, window,
@@ -109,18 +129,13 @@ int main(int argc, char **argv) {
 	);
 	
 	clipboard_init(connection, window, "TEXI_CLIPBOARD");
-	
+	keySymbols = xcb_key_symbols_alloc(connection);
 	xcb_flush(connection);
 	
-	keySymbols = xcb_key_symbols_alloc(connection);
-	
 	int dontExit = 1;
-	
-	if (argc > 1) loadDocument(documentPath);
-	else loadDocumentFromString("This is a scratch document, it isn't from a file, and thus wont be saved anywhere.");
-	
 	xcb_generic_event_t *event;
 	while (dontExit && (event = xcb_wait_for_event(connection))) {
+		getDimensions();
 		switch (event->response_type & ~0x80) {
 			case XCB_EXPOSE:
 			break;
@@ -148,10 +163,14 @@ int main(int argc, char **argv) {
 			break;
 		}
 		free(event);
+		xcb_flush(connection);
+		clear();
 		drawText(document+scroll, cursor-scroll, selected-scroll);
 		drawNumbers(document+scroll, cachedScrollLine);
 		xcb_flush(connection);
 	}
+	
+	free(document);
 	
 	xcb_key_symbols_free(keySymbols);
 	
@@ -160,6 +179,86 @@ int main(int argc, char **argv) {
 	xcb_disconnect(connection);
 
 	return 0;
+}
+
+void setAsciiStr(unsigned char c, char *str) {
+	int g = c;
+	if (g < 0) g = 0x80;
+	ascii[g].length = strlen(str);
+	for (size_t i = 0; str[i] && i < 7; i++) {
+		ascii[g].string[i] = (xcb_char2b_t) {0, str[i]};
+	}
+}
+
+void setAscii(unsigned char c, size_t n, ...) {
+	int g = c;
+	if (g < 0) g = 0x80;
+	ascii[g].length = n;
+	va_list parts;
+	va_start(parts, n);
+	for (size_t i = 0; i < n && i < 7; i++) {
+		int part = va_arg(parts, int);
+		ascii[g].string[i] = (xcb_char2b_t) {(part>>8)&0xff, part&0xff};
+	}
+	va_end(parts);
+}
+
+void loadFont(char *fontname) {
+	setAscii(0x80, 1, 0xa4);
+	for (char c = 0; c < 0x20; c++) setAscii(c, 1, 0xa4);
+	for (char c = 0x20; c < 0x7f; c++) setAscii(c, 1, c);
+	setAscii('\0', 1, ' ');
+	//setAscii('\n', 1, 0x21b5);
+	setAsciiStr('\n', "  ");
+	//setAscii('\t', 1, 0x2192);
+	setAsciiStr('\t', "  ");
+
+	xcb_font_t font = xcb_generate_id(connection);
+    xcb_open_font(connection, font, strlen(fontname), fontname);
+    
+	xcb_change_gc(connection, graphics, XCB_GC_FONT, (uint32_t[]) {font});
+	
+	xcb_query_text_extents_cookie_t advancesCookies[0x81];
+	for (char c = 0; c >= 0; c++) {
+		advancesCookies[c] = xcb_query_text_extents(connection, font, ascii[c].length, ascii[c].string);
+	}
+	
+	for (char c = 0; c >= 0; c++) {
+		xcb_query_text_extents_reply_t *reply = xcb_query_text_extents_reply(connection, advancesCookies[c], NULL);
+		ascii[c].advance = reply->overall_width;
+		if (lineoffset < reply->font_ascent) {
+			lineoffset = reply->font_ascent;
+		}
+		if (lineheight < reply->font_ascent + reply->font_descent) {
+			lineheight = reply->font_ascent + reply->font_descent;
+		}
+		free(reply);
+	}
+	xcb_close_font(connection, font);
+	
+	ascii['\t'].advance = 32;
+};
+
+void clear() {
+	setColor(bgDefault, fgDefault);
+	xcb_poly_fill_rectangle(connection, window, graphics, 1, &(const xcb_rectangle_t) {0, 0, dimensions.width, dimensions.height});
+	setColor(fgDefault, bgDefault);
+}
+
+void glyph(char c, uint16_t x, uint16_t y) {
+	int g = c;
+	if (c < 0) g = 0x80;
+	xcb_image_text_16(connection, ascii[g].length, window, graphics, x, lineoffset+y, ascii[g].string);
+}
+
+uint16_t advance(char c) {
+	int g = c;
+	if (c < 0) g = 0x80;
+	return ascii[g].advance;
+}
+
+uint16_t getNumGap() {
+	return 5 * advance('8');
 }
 
 void allocateDocument(size_t newSize) {
@@ -178,6 +277,10 @@ void loadDocument(char *path) {
 	if (file) {
 		fseek(file, 0, SEEK_END);
 		documentCachedLength = ftell(file);
+		if (document) {
+			free(document);
+			documentAllocatedSize = 0;
+		}
 		allocateDocument(documentCachedLength+1);
 		if (documentCachedLength > 0) {
 			rewind(file);
@@ -204,6 +307,9 @@ void saveDocument(char *path) {
 	}
 }
 
+int document_previousLine(int c);
+int document_nextLine(int c);
+
 void scrollup();
 void scrolldown();
 
@@ -214,9 +320,7 @@ void handleButtonPress(xcb_button_press_event_t *event) {
 		selected = cursor;
 	} else if (event->detail == 5) {
 		scrolldown();
-		scrolldown();
 	} else if (event->detail == 4) {
-		scrollup();
 		scrollup();
 	}
 }
@@ -246,12 +350,14 @@ void handleKeypress(xcb_key_press_event_t *event) {
 			clipboard_set(document+(cursor<selected ? cursor : selected), selected>cursor ? selected-cursor : cursor-selected);
 		} else if (keysym == XK_v) {
 			char buffer[1024];
-			selected = cursor = documentInsert(documentDeleteSelection(), clipboard_get(buffer, 1024), buffer);
+			selected = cursor = documentInsert(documentDeleteSelection(), clipboard_get(buffer, 1024, 0), buffer);
 		} else if (keysym == XK_x) {
 			clipboard_set(document+(cursor<selected ? cursor : selected), selected>cursor ? selected-cursor : cursor-selected);
 			documentDeleteSelection();
 		} else if (keysym == XK_s) {
-			saveDocument(documentPath);
+			if (documentPath) saveDocument(documentPath);
+		} else if (keysym == XK_r) {
+			//if (documentPath) loadDocument(documentPath);
 		}
 	} else if (keysym == XK_Up) {
 		if (event->state & XCB_MOD_MASK_SHIFT) {
@@ -303,72 +409,56 @@ void handleKeypress(xcb_key_press_event_t *event) {
 	}
 }
 
-
-uint16_t advance(char c);
-void glyph(char c, uint16_t x, uint16_t y);
-void glyph16(int c, uint16_t x, uint16_t y);
-void glyphtext(char *str, uint16_t x, uint16_t y);
-
-void getDimensions(uint16_t *width, uint16_t *height);
 void setColor(uint32_t fg, uint32_t bg);
 
-void drawNumbers(char *text, int line) {
+void drawnum(int n, uint16_t x, uint16_t y) {
 	char buffer[12];
+	snprintf(buffer, 12, "%i", n);
+	for (int i = 0; buffer[i]; i++) {
+		glyph(buffer[i], x, y);
+		x += advance(buffer[i]);
+	}
+}
+
+void advanceByOneWrappedLine(char **text, uint16_t *y) {
+	uint16_t x = linegutter;
+	*y += lineheight;
 	
-	uint16_t x = LINEBUFFER;
-	uint16_t y = LINEHEIGHT;
-	uint16_t width = 0;
-	uint16_t height = 0;
-	getDimensions(&width, &height);
-	int n = 0;
-	
-	line++;
-	snprintf(buffer, 12, "%i", line);
-	glyphtext(buffer, 0, y);
-	while (y < height-LINEHEIGHT && text[n]) {
-		uint16_t dx = advance(text[n]);
-		if (x + dx >= width) {
-			x = LINEBUFFER;
-			y += LINEHEIGHT;
+	while (**text && **text != '\n') {
+		uint16_t dx = advance(**text);
+		if (x+dx >= dimensions.width) {
+			x = linegutter;
+			*y += lineheight;
 		}
-		if (text[n] == '\n') {
-			x = LINEBUFFER;
-			y += LINEHEIGHT;
-			
-			line++;
-			snprintf(buffer, 12, "%i", line);
-			glyphtext(buffer, 0, y);
-		}
-		
 		x += dx;
-		n++;
+		(*text)++;
+	}
+}
+
+int drawLineNumber(int line, char **text, uint16_t *y) {
+	drawnum(line++, linegutter, *y);
+	advanceByOneWrappedLine(text, y);
+	return *y+lineheight < dimensions.height && **text ? line : 0;
+}
+
+void drawNumbers(char *text, int line) {
+	linegutter = 0;
+	uint16_t y = 0;
+	while ((line = drawLineNumber(line, &text, &y))) {
+		if (*text == '\n') text++;
 	}
 }
 
 void drawText(char *text, int cursor, int selected) {
 	if (selected < cursor) {
-		int c = cursor;
+		int temp = cursor;
 		cursor = selected;
-		selected = c;
+		selected = temp;
 	}
-	
-	uint16_t x = LINEBUFFER;
-	uint16_t y = LINEHEIGHT;
-	uint16_t width = 0;
-	uint16_t height = 0;
-	getDimensions(&width, &height);
-	int n = 0;
-	
-	setColor(bgDefault, fgDefault);
-	xcb_poly_fill_rectangle(connection, window, graphics, 1, (xcb_rectangle_t[]) {{0,0,width,height}});
-	
-	setColor(fgDefault, bgDefault);
-	
-	if (cursor < 0 && selected >= 0) {
-		setColor(fgSelected, bgSelected);
-	}
-	
-	while (y < height-LINEHEIGHT && text[n]) {
+	linegutter = getNumGap();
+	uint16_t x=linegutter, y=0;
+	int n;
+	for (n = 0; text[n] && y+lineheight < dimensions.height; n++) {
 		if (n == cursor) {
 			if (cursor==selected) {
 				setColor(fgCursor, bgCursor);
@@ -378,100 +468,83 @@ void drawText(char *text, int cursor, int selected) {
 		}
 		
 		uint16_t dx = advance(text[n]);
-		if (x + dx >= width) {
-			x = LINEBUFFER;
-			y += LINEHEIGHT;
+		if (x+dx >= dimensions.width) {
+			x = linegutter;
+			y += lineheight;
 		}
+		glyph(text[n], x, y);
 		if (text[n] == '\n') {
-			glyph16(0x21b5, x, y);
-			x = LINEBUFFER;
-			y += LINEHEIGHT;
-		} else if (text[n] == '\t') {
-			//glyph16(0x2192, x, y);
-			glyph(' ', x, y);
-		} else if (text[n] == ' ') {
-			glyph(' ', x, y);
+			x = linegutter;
+			y += lineheight;
 		} else {
-			glyph(text[n], x, y);
+			x += dx;
 		}
-		
-		x += dx;
 		
 		if ((cursor==selected && n == selected) || n == selected-1) {
 			setColor(fgDefault, bgDefault);
 		}
-		
-		n++;
 	}
 	
 	if (n == cursor) {
 		setColor(fgCursor, bgCursor);
 	}
-	glyph(' ', x, y);
+	glyph(text[n], x, y);
 	setColor(fgDefault, bgDefault);
 }
 
 size_t lengthOfDisplayedText(char *text) {
-	uint16_t x = LINEBUFFER;
-	uint16_t y = LINEHEIGHT;
-	uint16_t width = 0;
-	uint16_t height = 0;
-	getDimensions(&width, &height);
-	size_t n = 0;
-	
-	while (y < height-LINEHEIGHT && text[n]) {
+	linegutter = getNumGap();
+	uint16_t x=linegutter, y=0;
+	size_t n;
+	for (n = 0; text[n] && y+lineheight < dimensions.height; n++) {
 		uint16_t dx = advance(text[n]);
-		if (x + dx >= width) {
-			x = LINEBUFFER;
-			y += LINEHEIGHT;
+		if (x+dx >= dimensions.width) {
+			x = linegutter;
+			y += lineheight;
 		}
 		if (text[n] == '\n') {
-			x = LINEBUFFER;
-			y += LINEHEIGHT;
+			x = linegutter;
+			y += lineheight;
 		} else if (text[n] == '\t') {
-			x += dx;
+			x += 32;
 		} else {
 			x += dx;
 		}
-		n++;
 	}
 	return n;
 }
 
 size_t getMouseOnText(char *text, uint16_t mx, uint16_t my) {
-	uint16_t x = LINEBUFFER;
-	uint16_t y = LINEHEIGHT;
-	uint16_t width = 0;
-	uint16_t height = 0;
-	getDimensions(&width, &height);
-	size_t n = 0;
-	
-	while (y < height && text[n]) {
+	linegutter = getNumGap();
+	uint16_t x=linegutter, y=0;
+	size_t n;
+	for (n = 0; text[n] && y+lineheight < dimensions.height; n++) {
 		uint16_t dx = advance(text[n]);
-		if (x + dx >= width) {
-			if (my>=x && my>=y-LINEHEIGHT && my<y) {
+		if (x+dx >= dimensions.width) {
+			if (mx>=x && my>=y && my<y+lineheight) {
 				return n;
 			}
-			x = LINEBUFFER;
-			y += LINEHEIGHT;
+			x = linegutter;
+			y += lineheight;
+			if (mx<x && my>=y && my<y+lineheight) {
+				return n;
+			}
 		}
 		if (text[n] == '\n') {
-			if (mx>=x && my>=y-LINEHEIGHT && my<y) {
+			if (mx>=x && my>=y && my<y+lineheight) {
 				return n;
 			}
-			x = LINEBUFFER;
-			y += LINEHEIGHT;
-		} else if (text[n] == '\t') {
-			if (mx>=x && mx<x+dx && my>=y-LINEHEIGHT && my<y) {
-				return n;
+			x = linegutter;
+			y += lineheight;
+			if (mx<x && my>=y && my<y+lineheight) {
+				return n+1;
 			}
 		} else {
-			if (mx>=x && mx<x+dx && my>=y-LINEHEIGHT && my<y) {
+			if (mx>=x && mx<x+dx && my>=y && my<y+lineheight) {
 				return n;
 			}
+			x += dx;
 		}
-		x += dx;
-		n++;
 	}
 	return n;
 }
@@ -500,46 +573,69 @@ char asciiupper(char c) {
 	}
 }
 
-void scrollup() {
-	if (scroll>1) cachedScrollLine--;
-	if (scroll>1 && document[scroll-1] == '\n') scroll-=2;
-	while (scroll>0 && document[scroll] != '\n') scroll--;
-	if (scroll>0 && document[scroll]) scroll++;
+uint16_t document_findXPosOf(int c) {
+	uint16_t x = linegutter;
+	while (c>0 && document[--c] != '\n') {
+		x+=advance(document[c]);
+	}
+	return x;
 }
 
-void scrolldown() {
-	if (lengthOfDisplayedText(document+scroll) >= documentCachedLength-scroll) return;
-	while (document[scroll] && document[scroll] != '\n') scroll++;
-	if (document[scroll]) scroll++;
-	if (document[scroll]) cachedScrollLine++;
+uint16_t document_forwardWidth(int c, uint16_t s) {
+	uint16_t x = linegutter;
+	uint16_t dx;
+	while (x + ((dx=advance(document[c]))/2) < s && document[c] && document[c] != '\n') {
+		x+=dx;
+		c++;
+	}
+	return c;
+}
+
+int document_previousLine(int c) {
+	int start = c;
+	if (c>0 && document[c] == '\n') c--;
+	while (c>0 && document[c] != '\n') c--;
+	if (c>0) {
+		c--;
+		while (c>0 && document[c] != '\n') c--;
+		if (c>0 && document[c]) c++;
+		return c;
+	} else return start;
+}
+
+int document_nextLine(int c) {
+	int start = c;
+	while (document[c] && document[c] != '\n') c++;
+	if (document[c]) return c+1;
+	else return start;
 }
 
 int offsetUp(int c) {
-	int n = 0;
-	if (c-n>0 && document[c-n] == '\n') n++;
-	while (c-n>0 && document[c-n] != '\n') n++;
-	if (c-n>0 && document[c-n]) n--;
-	c-=n;
-	
-	if (c>1) c-=2;
-	while (c>0 && document[c] != '\n') c--;
-	if (c>0 && document[c]) c++;
-	
-	while (n-- && document[c] && document[c] != '\n') c++;
-	return c;
+	return document_forwardWidth(document_previousLine(c), document_findXPosOf(c));
 }
 
 int offsetDown(int c) {
-	int n = 0;
-	if (c-n>0 && document[c-n] == '\n') n++;
-	while (c-n>0 && document[c-n] != '\n') n++;
-	if (c-n>0 && document[c-n]) n--;
+	return document_forwardWidth(document_nextLine(c), document_findXPosOf(c));
+}
+
+void scrollup() {
+	size_t c = document_previousLine(scroll);
+	if (scroll != c) cachedScrollLine--;
+	scroll = c;
 	
-	while (document[c] && document[c] != '\n') c++;
-	if (document[c]) c++;
+	c = document_previousLine(scroll);
+	if (scroll != c) cachedScrollLine--;
+	scroll = c;
+}
+
+void scrolldown() {
+	size_t c = document_nextLine(scroll);
+	if (scroll != c) cachedScrollLine++;
+	scroll = c;
 	
-	while (n-- && document[c] && document[c] != '\n') c++;
-	return c;
+	c = document_nextLine(scroll);
+	if (scroll != c) cachedScrollLine++;
+	scroll = c;
 }
 
 int documentInsert(size_t where, size_t size, char *what) {
@@ -573,29 +669,11 @@ int documentDeleteSelection() {
 	return cursor;
 }
 
-void getDimensions(uint16_t *width, uint16_t *height) {
+void getDimensions() {
 	xcb_get_geometry_reply_t* geom = xcb_get_geometry_reply(connection, xcb_get_geometry(connection, window), 0);
-	if (width) *width = geom->width;
-	if (height) *height = geom->height;
+	dimensions.width = geom->width;
+	dimensions.height = geom->height;
 	free(geom);
-}
-
-uint16_t advance(char c) {
-	if (c == '\t') return 32;
-	else if (c == '\n') return 0;
-	else return 8;
-}
-
-void glyph(char c, uint16_t x, uint16_t y) {
-	xcb_image_text_8(connection, 1, window, graphics, x, y, (char[]) {c, 0});
-}
-
-void glyph16(int c, uint16_t x, uint16_t y) {
-	xcb_image_text_16(connection, 1, window, graphics, x, y, (const xcb_char2b_t[]) {{(c>>8)&0xff, c&0xff}, {0, 0}});
-}
-
-void glyphtext(char *str, uint16_t x, uint16_t y) {
-	xcb_image_text_8(connection, strlen(str), window, graphics, x, y, str);
 }
 
 void setColor(uint32_t fg, uint32_t bg) {
