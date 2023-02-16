@@ -29,31 +29,6 @@ void ctheme_base() {
 	colortheme[COLORSCHEME_DEFAULT][0] = (struct ColorEntry) {.isRef=NO, .exact=0x000000};
 }
 
-void ctheme_defaults() {
-	colortheme[COLORSCHEME_DEFAULT][0] = (struct ColorEntry) {.isRef=NO, .exact=0x000000};
-	colortheme[COLORSCHEME_DEFAULT][1] = (struct ColorEntry) {.isRef=NO, .exact=0xffffff};
-	
-	colortheme[COLORSCHEME_SELECTED][0] = (struct ColorEntry) {.isRef=YES, .reference={COLORSCHEME_DEFAULT, 1}};
-	colortheme[COLORSCHEME_SELECTED][1] = (struct ColorEntry) {.isRef=YES, .reference={COLORSCHEME_DEFAULT, 0}};
-	
-	colortheme[COLORSCHEME_DARK][0] =    (struct ColorEntry) {.isRef=NO, .exact=0x000000};
-	colortheme[COLORSCHEME_DARK][1] =    (struct ColorEntry) {.isRef=NO, .exact=0x555555};
-	colortheme[COLORSCHEME_LIGHT][0] =   (struct ColorEntry) {.isRef=NO, .exact=0xababab};
-	colortheme[COLORSCHEME_LIGHT][1] =   (struct ColorEntry) {.isRef=NO, .exact=0xffffff};
-	colortheme[COLORSCHEME_RED][0] =     (struct ColorEntry) {.isRef=NO, .exact=0x0000ff};
-	colortheme[COLORSCHEME_RED][1] =     (struct ColorEntry) {.isRef=NO, .exact=0x000077};
-	colortheme[COLORSCHEME_GREEN][0] =   (struct ColorEntry) {.isRef=NO, .exact=0x00ff00};
-	colortheme[COLORSCHEME_GREEN][1] =   (struct ColorEntry) {.isRef=NO, .exact=0x007700};
-	colortheme[COLORSCHEME_YELLOW][0] =  (struct ColorEntry) {.isRef=NO, .exact=0x00ffff};
-	colortheme[COLORSCHEME_YELLOW][1] =  (struct ColorEntry) {.isRef=NO, .exact=0x007777};
-	colortheme[COLORSCHEME_BLUE][0] =    (struct ColorEntry) {.isRef=NO, .exact=0xff0000};
-	colortheme[COLORSCHEME_BLUE][1] =    (struct ColorEntry) {.isRef=NO, .exact=0x770000};
-	colortheme[COLORSCHEME_CYAN][0] =    (struct ColorEntry) {.isRef=NO, .exact=0xffff00};
-	colortheme[COLORSCHEME_CYAN][1] =    (struct ColorEntry) {.isRef=NO, .exact=0x777700};
-	colortheme[COLORSCHEME_MAGENTA][0] = (struct ColorEntry) {.isRef=NO, .exact=0xff00ff};
-	colortheme[COLORSCHEME_MAGENTA][1] = (struct ColorEntry) {.isRef=NO, .exact=0x770077};
-}
-
 char *colorschemeNames[COLORSCHEME_FINAL] = {
 	"default", "selected",
 	"dark", "light", "red", "green", "yellow", "blue", "cyan", "magenta",
@@ -137,7 +112,7 @@ FILE *ctheme_openHomeFolderFile(char *file, char *flags) {
 	return NULL;
 }
 
-void ctheme_load(char *path) {
+int ctheme_load(char *path) {
 	ctheme_base();
 	FILE *file;
 	if (path) {
@@ -145,6 +120,7 @@ void ctheme_load(char *path) {
 	} else {
 		file = ctheme_openHomeFolderFile(".ctheme", "rb");
 	}
+	int good = 0;
 	if (file) {
 		fseek(file, 0, SEEK_END);
 		size_t length = ftell(file);
@@ -155,9 +131,44 @@ void ctheme_load(char *path) {
 			data[length] = 0;
 			ctheme_readSettingsFile(data);
 			free(data);
-		} else ctheme_defaults();
+			good = 1;
+		};
 		fclose(file);
-	} else ctheme_defaults();
+	};
+	return good;
+}
+
+void ctheme_set(colorscheme_id_t id, colorscheme_level_t level, color_t color, color_format_t format) {
+	if (level > 0) level--;
+	if (level >= MAX_ENTRIES_PER_COLORSCHEME) {
+		level = MAX_ENTRIES_PER_COLORSCHEME-1;
+	}
+	if (id == COLORSCHEME_FINAL) id = COLORSCHEME_DEFAULT;
+	
+	switch (format) {
+		case RGBA:
+		case BGRA:
+		color = color & 0xffffff;
+		break;
+		case ARGB:
+		case ABGR:
+		color = color >> 8;
+		default:
+	}
+	
+	switch (format) {
+		case BGR:
+		case BGRA:
+		case ABGR:
+		color = ((color&0xff)<<16)
+			| (color&0xff00)
+			| ((color&0xff0000)>>16);
+		break;
+		default:
+	}
+	
+	colortheme[id][level].isRef = NO;
+	colortheme[id][level].exact = color;
 }
 
 color_t ctheme_get(colorscheme_id_t id, colorscheme_level_t level, color_format_t format) {
@@ -206,7 +217,7 @@ color_t ctheme_get(colorscheme_id_t id, colorscheme_level_t level, color_format_
 		break;
 		case ARGB:
 		case ABGR:
-		c = (gotten.exact<<8) | 0xff;
+		c = (c<<8) | 0xff;
 		default:
 	}
 	

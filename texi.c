@@ -99,7 +99,12 @@ int main(int argc, char **argv) {
 	loadFont("-xos4-terminus-medium-r-normal--12-120-72-72-c-60-iso10646-1");
 	//loadFont("lucidasans-8");
 	
-	ctheme_load(NULL);
+	if (!ctheme_load(NULL)) {
+		ctheme_set(COLORSCHEME_DEFAULT, 1, 0x000000, BGR);
+		ctheme_set(COLORSCHEME_DEFAULT, 2, 0xffffff, BGR);
+		ctheme_set(COLORSCHEME_SELECTED, 1, 0xffffff, BGR);
+		ctheme_set(COLORSCHEME_SELECTED, 2, 0xff0000, BGR);
+	}
 	defaultFG  = ctheme_get(COLORSCHEME_DEFAULT, 1, RGBA);
 	defaultBG  = ctheme_get(COLORSCHEME_DEFAULT, 2, RGBA);
 	selectedFG = ctheme_get(COLORSCHEME_SELECTED, 1, RGBA);
