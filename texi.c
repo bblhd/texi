@@ -117,7 +117,8 @@ int main(int argc, char **argv) {
 		0, 0, 150, 150, 10,
 		XCB_WINDOW_CLASS_INPUT_OUTPUT, screen->root_visual,
 		XCB_CW_BACK_PIXEL | XCB_CW_EVENT_MASK,
-		(uint32_t[]) {screen->white_pixel,
+		(uint32_t[]) {
+			defaultBG,
 			XCB_EVENT_MASK_EXPOSURE
 			| XCB_EVENT_MASK_KEY_PRESS
 			| XCB_EVENT_MASK_BUTTON_PRESS
@@ -252,9 +253,7 @@ void loadFont(char *fontname) {
 };
 
 void clear() {
-	setColor(defaultBG, defaultFG);
-	xcb_poly_fill_rectangle(connection, window, graphics, 1, &(const xcb_rectangle_t) {0, 0, dimensions.width, dimensions.height});
-	setColor(defaultFG, defaultBG);
+	xcb_clear_area(connection, 0, window, 0, 0, 0, 0);
 }
 
 void glyph(char c, uint16_t x, uint16_t y) {
