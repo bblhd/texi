@@ -43,8 +43,8 @@ color_t defaultBG;
 color_t selectedFG;
 color_t selectedBG;
 
-color_t oldFG = 0;
-color_t oldBG = 0;
+color_t oldFG;
+color_t oldBG;
 
 struct {
 	uint16_t width, height;
@@ -99,16 +99,17 @@ int main(int argc, char **argv) {
 	loadFont("-xos4-terminus-medium-r-normal--12-120-72-72-c-60-iso10646-1");
 	//loadFont("lucidasans-8");
 	
+	ctheme_clear();
 	if (!ctheme_load(NULL)) {
 		ctheme_set(COLORSCHEME_DEFAULT, 1, 0x000000, BGR);
 		ctheme_set(COLORSCHEME_DEFAULT, 2, 0xffffff, BGR);
 		ctheme_set(COLORSCHEME_SELECTED, 1, 0xffffff, BGR);
 		ctheme_set(COLORSCHEME_SELECTED, 2, 0xff0000, BGR);
 	}
-	defaultFG  = ctheme_get(COLORSCHEME_DEFAULT, 1, RGBA);
-	defaultBG  = ctheme_get(COLORSCHEME_DEFAULT, 2, RGBA);
-	selectedFG = ctheme_get(COLORSCHEME_SELECTED, 1, RGBA);
-	selectedBG = ctheme_get(COLORSCHEME_SELECTED, 2, RGBA);
+	defaultFG  = ctheme_get(COLORSCHEME_DEFAULT, 1, RGB);
+	defaultBG  = ctheme_get(COLORSCHEME_DEFAULT, 2, RGB);
+	selectedFG = ctheme_get(COLORSCHEME_SELECTED, 1, RGB);
+	selectedBG = ctheme_get(COLORSCHEME_SELECTED, 2, RGB);
 	
 	window = xcb_generate_id(connection);
 	xcb_create_window(
@@ -482,6 +483,10 @@ void drawText(char *text, int cursor, int selected) {
 		selected = temp;
 	}
 	linegutter = getNumGap();
+	xcb_poly_line(
+		connection, 0, window, graphics, 2,
+		(const xcb_point_t[]) {{linegutter-4, 0}, {linegutter-4, dimensions.height}}
+	);
 	uint16_t x=linegutter, y=0;
 	if (cursor < 0 && selected > 0 && selected < (int) lengthOfDisplayedText(text)) {
 		setColor(selectedFG, selectedBG);
@@ -706,11 +711,11 @@ void getDimensions() {
 }
 
 void setColor(uint32_t fg, uint32_t bg) {
-	if (bg != oldBG && fg != oldFG && bg != 0 && fg != 0) {
+	if (bg != oldBG && fg != oldFG) {
 		xcb_change_gc(connection, graphics, XCB_GC_FOREGROUND | XCB_GC_BACKGROUND, (uint32_t[]) {fg, bg});
-	} else if (bg != oldBG && bg != 0) {
+	} else if (bg != oldBG) {
 		xcb_change_gc(connection, graphics, XCB_GC_BACKGROUND, (uint32_t[]) {bg});
-	} else if (fg == oldFG && fg != 0) {
+	} else if (fg == oldFG) {
 		xcb_change_gc(connection, graphics, XCB_GC_FOREGROUND, (uint32_t[]) {fg});
 	}
 	oldBG = bg;
