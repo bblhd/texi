@@ -302,6 +302,10 @@ void loadDocument(char *path) {
 			document[documentCachedLength] = 0;
 		}
 		fclose(file);
+	} else {
+		documentCachedLength = 0;
+		allocateDocument(documentCachedLength+1);
+		document[documentCachedLength] = 0;
 	}
 }
 
