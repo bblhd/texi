@@ -10,7 +10,7 @@ clicking on text, and change the selection by releasing
 somewhere else. You can save changes by pressing `ctrl + s`,
 copy with `ctrl + c`, cut with `ctrl + x`, and paste with `ctrl + v`. 
 
-Please note that **texi lacks undo functionality, so changes are permanent**.
+Please note that **texi lacks undo functionality**, so be careful when editing.
 
 ## Installing
 Compile using `make` or `make compile`, and then install
