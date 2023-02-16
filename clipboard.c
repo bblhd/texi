@@ -79,6 +79,8 @@ size_t clipboard_get(char *str, size_t length, size_t offset) {
 	} else if (clipboard.source) {
 		length = length < clipboard.length ? length : clipboard.length;
 		memcpy(str, clipboard.source, length);
+	} else {
+		length = 0;
 	}
 	
 	xcb_delete_property(clipboard.connection, clipboard.window, property);

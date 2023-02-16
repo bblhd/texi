@@ -351,8 +351,11 @@ void pasteWholeBuffer() {
 	do {
 		length = clipboard_get(buffer, 1024, offset);
 		offset += length;
-		selected = cursor = documentInsert(documentDeleteSelection(), length, buffer);
-	} while (length == 1024);
+		selected = cursor = documentDeleteSelection();
+		if (length > 0) {
+			selected = cursor = documentInsert(cursor, length, buffer);
+		}
+	} while (length == 1024 && length > 0);
 }
 
 void handleKeypress(xcb_key_press_event_t *event) {
@@ -503,7 +506,6 @@ void drawText(char *text, int cursor, int selected) {
 	if (n == cursor) {
 		setColor(fgCursor, bgCursor);
 	}
-	glyph(text[n], x, y);
 	setColor(fgDefault, bgDefault);
 }
 
