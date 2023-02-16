@@ -483,6 +483,9 @@ void drawText(char *text, int cursor, int selected) {
 	}
 	linegutter = getNumGap();
 	uint16_t x=linegutter, y=0;
+	if (cursor < 0 && selected > 0 && selected < (int) lengthOfDisplayedText(text)) {
+		setColor(selectedFG, selectedBG);
+	}
 	int n;
 	for (n = 0; text[n] && y+lineheight < dimensions.height; n++) {
 		if (n == cursor) {
