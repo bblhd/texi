@@ -8,7 +8,8 @@ Use arrows to move cursor, and hold shift while doing it
 to change the selection. You can also move the cursor by
 clicking on text, and change the selection by releasing
 somewhere else. You can save changes by pressing `ctrl + s`,
-copy with `ctrl + c`, cut with `ctrl + x`, and paste with `ctrl + v`. 
+select all with `ctrl + a`, copy with `ctrl + c`, cut with
+`ctrl + x`, and paste with `ctrl + v`. 
 
 Please note that **texi lacks undo functionality, so changes are permanent**.
 

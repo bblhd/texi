@@ -99,7 +99,7 @@ int main(int argc, char **argv) {
 		XCB_GC_FOREGROUND | XCB_GC_BACKGROUND | XCB_GC_GRAPHICS_EXPOSURES,
 		(uint32_t[]) {screen->black_pixel, screen->white_pixel, 1}
 	);
-	loadFont("-xos4-terminus-medium-r-normal--14-140-72-72-c-80-iso10646-1");
+	loadFont("-xos4-terminus-medium-r-normal--12-120-72-72-c-60-iso10646-1");
 	//loadFont("lucidasans-8");
 	
 	window = xcb_generate_id(connection);
@@ -121,7 +121,7 @@ int main(int argc, char **argv) {
 	
 	if (argc > 1) documentPath = argv[1];
 	if (documentPath) loadDocument(documentPath);
-	else loadDocumentFromString("This is a scratch document, it isn't from a file, and thus wont be saved anywhere.");
+	else loadDocumentFromString("This is a scratch document, it isn't from a file, and thus will not be saved.");
 	
 	char *windowTitle = documentPath ? documentPath : "scratch";
 	xcb_change_property (
@@ -186,7 +186,6 @@ int main(int argc, char **argv) {
 }
 
 long lasttime = 0;
-
 bool shouldFrameUpdate() {
 	struct timeval time;
 	gettimeofday(&time, NULL);
@@ -195,15 +194,6 @@ bool shouldFrameUpdate() {
 	bool yes = lasttime == 0 || currenttime >= lasttime + 1000/45;
 	if (yes) lasttime = currenttime;
 	return yes;
-}
-
-void setAsciiStr(unsigned char c, char *str) {
-	int g = c;
-	if (g < 0) g = 0x80;
-	ascii[g].length = strlen(str);
-	for (size_t i = 0; str[i] && i < 7; i++) {
-		ascii[g].string[i] = (xcb_char2b_t) {0, str[i]};
-	}
 }
 
 void setAscii(unsigned char c, size_t n, ...) {
@@ -224,13 +214,11 @@ void loadFont(char *fontname) {
 	for (char c = 0; c < 0x20; c++) setAscii(c, 1, 0xa4);
 	for (char c = 0x20; c < 0x7f; c++) setAscii(c, 1, c);
 	setAscii('\0', 1, ' ');
-	//setAscii('\n', 1, 0x21b5);
-	setAsciiStr('\n', "  ");
-	//setAscii('\t', 1, 0x2192);
-	setAsciiStr('\t', "  ");
+	setAscii('\n', 2, ' ', ' ');
+	setAscii('\t', 2, ' ', ' ');
 
 	xcb_font_t font = xcb_generate_id(connection);
-    xcb_open_font(connection, font, strlen(fontname), fontname);
+	xcb_open_font(connection, font, strlen(fontname), fontname);
     
 	xcb_change_gc(connection, graphics, XCB_GC_FONT, (uint32_t[]) {font});
 	
@@ -330,7 +318,6 @@ void scrollup();
 void scrolldown();
 
 void handleButtonPress(xcb_button_press_event_t *event) {
-	// change scroll behaviours here
 	if (event->detail == 1) {
 		cursor = scroll + getMouseOnText(document + scroll, event->event_x, event->event_y);
 		selected = cursor;
@@ -358,15 +345,27 @@ int documentDeleteSelection();
 int offsetUp(int c);
 int offsetDown(int c);
 
+void pasteWholeBuffer() {
+	char buffer[1024];
+	size_t length=0, offset=0;
+	do {
+		length = clipboard_get(buffer, 1024, offset);
+		offset += length;
+		selected = cursor = documentInsert(documentDeleteSelection(), length, buffer);
+	} while (length == 1024);
+}
+
 void handleKeypress(xcb_key_press_event_t *event) {
 	xcb_keysym_t keysym = getKeysym(event->detail);
 	
 	if (event->state & XCB_MOD_MASK_CONTROL) {
-		if (keysym == XK_c) {
+		if (keysym == XK_a) {
+			cursor = 0;
+			selected = documentCachedLength;
+		} else if (keysym == XK_c) {
 			clipboard_set(document+(cursor<selected ? cursor : selected), selected>cursor ? selected-cursor : cursor-selected);
 		} else if (keysym == XK_v) {
-			char buffer[1024];
-			selected = cursor = documentInsert(documentDeleteSelection(), clipboard_get(buffer, 1024, 0), buffer);
+			pasteWholeBuffer();
 		} else if (keysym == XK_x) {
 			clipboard_set(document+(cursor<selected ? cursor : selected), selected>cursor ? selected-cursor : cursor-selected);
 			documentDeleteSelection();
@@ -521,8 +520,6 @@ size_t lengthOfDisplayedText(char *text) {
 		if (text[n] == '\n') {
 			x = linegutter;
 			y += lineheight;
-		} else if (text[n] == '\t') {
-			x += 32;
 		} else {
 			x += dx;
 		}
