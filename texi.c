@@ -40,6 +40,7 @@ int selected = 0;
 
 color_t defaultFG;
 color_t defaultBG;
+color_t edgeColour;
 color_t selectedFG;
 color_t selectedBG;
 
@@ -108,6 +109,7 @@ int main(int argc, char **argv) {
 	}
 	defaultFG  = ctheme_get(COLORSCHEME_DEFAULT, 1, RGB);
 	defaultBG  = ctheme_get(COLORSCHEME_DEFAULT, 2, RGB);
+	edgeColour = ctheme_get(COLORSCHEME_DEFAULT, 3, RGB);
 	selectedFG = ctheme_get(COLORSCHEME_SELECTED, 1, RGB);
 	selectedBG = ctheme_get(COLORSCHEME_SELECTED, 2, RGB);
 	
@@ -483,14 +485,19 @@ void drawText(char *text, int cursor, int selected) {
 		selected = temp;
 	}
 	linegutter = getNumGap();
+	
+	setColor(edgeColour, edgeColour);
 	xcb_poly_line(
 		connection, 0, window, graphics, 2,
 		(const xcb_point_t[]) {{linegutter-4, 0}, {linegutter-4, dimensions.height}}
 	);
-	uint16_t x=linegutter, y=0;
-	if (cursor < 0 && selected > 0 && selected < (int) lengthOfDisplayedText(text)) {
+	if (cursor < 0 && selected > 0) {
 		setColor(selectedFG, selectedBG);
+	} else {
+		setColor(defaultFG, defaultBG);
 	}
+	
+	uint16_t x=linegutter, y=0;
 	int n;
 	for (n = 0; text[n] && y+lineheight < dimensions.height; n++) {
 		if (n == cursor) {
