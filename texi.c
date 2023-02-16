@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdarg.h>
+#include <sys/time.h>
 
 #include <xcb/xcb.h>
 #include <xcb/xproto.h>
@@ -78,6 +79,7 @@ void drawText(char *text, int cursor, int selected);
 size_t lengthOfDisplayedText(char *text);
 size_t getMouseOnText(char *text, uint16_t mx, uint16_t my);
 
+bool shouldFrameUpdate();
 void clear();
 void getDimensions();
 void setColor(uint32_t fg, uint32_t bg);
@@ -97,8 +99,8 @@ int main(int argc, char **argv) {
 		XCB_GC_FOREGROUND | XCB_GC_BACKGROUND | XCB_GC_GRAPHICS_EXPOSURES,
 		(uint32_t[]) {screen->black_pixel, screen->white_pixel, 1}
 	);
-	//loadFont("-xos4-terminus-medium-r-normal--14-140-72-72-c-80-iso10646-1");
-	loadFont("lucidasans-8");
+	loadFont("-xos4-terminus-medium-r-normal--14-140-72-72-c-80-iso10646-1");
+	//loadFont("lucidasans-8");
 	
 	window = xcb_generate_id(connection);
 	xcb_create_window(
@@ -164,9 +166,11 @@ int main(int argc, char **argv) {
 		}
 		free(event);
 		xcb_flush(connection);
-		clear();
-		drawText(document+scroll, cursor-scroll, selected-scroll);
-		drawNumbers(document+scroll, cachedScrollLine);
+		if (shouldFrameUpdate()) {
+			clear();
+			drawText(document+scroll, cursor-scroll, selected-scroll);
+			drawNumbers(document+scroll, cachedScrollLine+1);
+		}
 		xcb_flush(connection);
 	}
 	
@@ -179,6 +183,18 @@ int main(int argc, char **argv) {
 	xcb_disconnect(connection);
 
 	return 0;
+}
+
+long lasttime = 0;
+
+bool shouldFrameUpdate() {
+	struct timeval time;
+	gettimeofday(&time, NULL);
+	long currenttime = time.tv_sec * 1000 + time.tv_usec / 1000;
+	
+	bool yes = lasttime == 0 || currenttime >= lasttime + 1000/45;
+	if (yes) lasttime = currenttime;
+	return yes;
 }
 
 void setAsciiStr(unsigned char c, char *str) {
