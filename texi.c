@@ -506,6 +506,9 @@ void drawText(char *text, int cursor, int selected) {
 	if (n == cursor) {
 		setColor(fgCursor, bgCursor);
 	}
+	if (y+lineheight < dimensions.height) {
+		glyph(text[n], x, y);
+	}
 	setColor(fgDefault, bgDefault);
 }
 
