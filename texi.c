@@ -8,6 +8,7 @@
 #include <xcb/xproto.h>
 #include <xcb/xcb_keysyms.h>
 
+#include "ctheme.h"
 #include "clipboard.h"
 
 #define XK_MISCELLANY
@@ -37,17 +38,13 @@ int cachedScrollLine = 0;
 int cursor = 0;
 int selected = 0;
 
-const uint32_t fgDefault = 0xff000000;
-const uint32_t bgDefault = 0xffffffff;
+color_t defaultFG;
+color_t defaultBG;
+color_t selectedFG;
+color_t selectedBG;
 
-const uint32_t fgCursor = bgDefault;
-const uint32_t bgCursor = fgDefault;
-
-const uint32_t fgSelected = 0xffffffff;
-const uint32_t bgSelected = 0xff0000ff;
-
-uint32_t oldBG = 0;
-uint32_t oldFG = 0;
+color_t oldFG = 0;
+color_t oldBG = 0;
 
 struct {
 	uint16_t width, height;
@@ -92,7 +89,7 @@ int main(int argc, char **argv) {
 	xcb_intern_atom_reply_t* atom_reply = xcb_intern_atom_reply(connection, xcb_intern_atom(connection, 0, 16, "WM_DELETE_WINDOW"), 0);
 	wm_delete_window_atom = atom_reply->atom;
 	free(atom_reply);
-    
+	
 	graphics = xcb_generate_id(connection);
 	xcb_create_gc(
 		connection, graphics, screen->root,
@@ -101,6 +98,12 @@ int main(int argc, char **argv) {
 	);
 	loadFont("-xos4-terminus-medium-r-normal--12-120-72-72-c-60-iso10646-1");
 	//loadFont("lucidasans-8");
+	
+	ctheme_load(NULL);
+	defaultFG = ctheme_get(COLORSCHEME_DEFAULT, 0, RGBA);
+	defaultBG = ctheme_get(COLORSCHEME_DEFAULT, 1, RGBA);
+	selectedFG = ctheme_get(COLORSCHEME_SELECTED, 0, RGBA);
+	selectedBG = ctheme_get(COLORSCHEME_SELECTED, 1, RGBA);
 	
 	window = xcb_generate_id(connection);
 	xcb_create_window(
@@ -244,9 +247,9 @@ void loadFont(char *fontname) {
 };
 
 void clear() {
-	setColor(bgDefault, fgDefault);
+	setColor(defaultBG, defaultFG);
 	xcb_poly_fill_rectangle(connection, window, graphics, 1, &(const xcb_rectangle_t) {0, 0, dimensions.width, dimensions.height});
-	setColor(fgDefault, bgDefault);
+	setColor(defaultFG, defaultBG);
 }
 
 void glyph(char c, uint16_t x, uint16_t y) {
@@ -462,6 +465,7 @@ int drawLineNumber(int line, char **text, uint16_t *y) {
 void drawNumbers(char *text, int line) {
 	linegutter = 0;
 	uint16_t y = 0;
+	setColor(defaultFG, defaultBG);
 	while ((line = drawLineNumber(line, &text, &y))) {
 		if (*text == '\n') text++;
 	}
@@ -479,9 +483,9 @@ void drawText(char *text, int cursor, int selected) {
 	for (n = 0; text[n] && y+lineheight < dimensions.height; n++) {
 		if (n == cursor) {
 			if (cursor==selected) {
-				setColor(fgCursor, bgCursor);
+				setColor(defaultBG, defaultFG);
 			} else {
-				setColor(fgSelected, bgSelected);
+				setColor(selectedFG, selectedBG);
 			}
 		}
 		
@@ -499,17 +503,17 @@ void drawText(char *text, int cursor, int selected) {
 		}
 		
 		if ((cursor==selected && n == selected) || n == selected-1) {
-			setColor(fgDefault, bgDefault);
+			setColor(defaultFG, defaultBG);
 		}
 	}
 	
 	if (n == cursor) {
-		setColor(fgCursor, bgCursor);
+		setColor(defaultBG, defaultFG);
 	}
 	if (y+lineheight < dimensions.height) {
 		glyph(text[n], x, y);
 	}
-	setColor(fgDefault, bgDefault);
+	setColor(defaultFG, defaultBG);
 }
 
 size_t lengthOfDisplayedText(char *text) {
