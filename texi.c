@@ -100,10 +100,10 @@ int main(int argc, char **argv) {
 	//loadFont("lucidasans-8");
 	
 	ctheme_load(NULL);
-	defaultFG = ctheme_get(COLORSCHEME_DEFAULT, 0, RGBA);
-	defaultBG = ctheme_get(COLORSCHEME_DEFAULT, 1, RGBA);
-	selectedFG = ctheme_get(COLORSCHEME_SELECTED, 0, RGBA);
-	selectedBG = ctheme_get(COLORSCHEME_SELECTED, 1, RGBA);
+	defaultFG  = ctheme_get(COLORSCHEME_DEFAULT, 1, RGBA);
+	defaultBG  = ctheme_get(COLORSCHEME_DEFAULT, 2, RGBA);
+	selectedFG = ctheme_get(COLORSCHEME_SELECTED, 1, RGBA);
+	selectedBG = ctheme_get(COLORSCHEME_SELECTED, 2, RGBA);
 	
 	window = xcb_generate_id(connection);
 	xcb_create_window(
