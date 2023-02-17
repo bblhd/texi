@@ -73,11 +73,11 @@ size_t clipboard_get(char *str, size_t length, size_t offset) {
 	);
 	
 	if (reply && xcb_get_property_value_length(reply) > 0) {
-		length = length < (size_t) xcb_get_property_value_length(reply) ? length : (size_t) xcb_get_property_value_length(reply);
+		length = length < (size_t) xcb_get_property_value_length(reply)*4 ? length : (size_t) xcb_get_property_value_length(reply)*4;
 		memcpy(str, xcb_get_property_value(reply), length);
 		free(reply);
-	} else if (clipboard.source) {
-		length = length < clipboard.length ? length : clipboard.length;
+	} else if (clipboard.source && clipboard.length > offset) {
+		length = length < clipboard.length-offset ? length : clipboard.length-offset;
 		memcpy(str, clipboard.source, length);
 	} else {
 		length = 0;

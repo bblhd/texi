@@ -369,7 +369,7 @@ void pasteWholeBuffer() {
 		if (length > 0) {
 			selected = cursor = documentInsert(cursor, length, buffer);
 		}
-	} while (length == 1024 && length > 0);
+	} while (length == 1024);
 }
 
 void handleKeypress(xcb_key_press_event_t *event) {
