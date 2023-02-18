@@ -366,6 +366,7 @@ void pasteWholeBuffer() {
 		length = clipboard_get(buffer, 1024, offset);
 		offset += length;
 		selected = cursor = documentDeleteSelection();
+		if (length > strlen(buffer)) length = strlen(buffer);
 		if (length > 0) {
 			selected = cursor = documentInsert(cursor, length, buffer);
 		}
