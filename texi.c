@@ -638,18 +638,13 @@ uint16_t document_forwardWidth(int c, uint16_t s) {
 }
 
 int document_previousLine(int c) {
-	int start = c;
-	if (c>0 && document[c] == '\n') c--;
-	while (c>0 && document[c] != '\n') c--;
-	if (c>0) {
-		c--;
-		while (c>0 && document[c] != '\n') c--;
-		if (c>0 && document[c]) c++;
-		return c;
-	} else return start;
+	if (c>0) do c--; while (c>0 && document[c] != '\n');
+	while (c > 0 && document[c-1] != '\n') c--;
+	return c;
 }
 
 int document_nextLine(int c) {
+	while (c>0 && document[c-1] != '\n') c--;
 	int start = c;
 	while (document[c] && document[c] != '\n') c++;
 	if (document[c]) return c+1;
