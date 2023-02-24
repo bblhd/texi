@@ -320,6 +320,7 @@ void loadDocument(char *path) {
 }
 
 void loadDocumentFromString(char *string) {
+	syntax_init(F_Plaintext);
 	documentCachedLength = strlen(string);
 	allocateDocument(documentCachedLength+1);
 	strcpy(document, string);
