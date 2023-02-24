@@ -99,7 +99,7 @@ int main(int argc, char **argv) {
 	);
 	loadFont("-xos4-terminus-medium-r-normal--14-140-72-72-c-80-iso10646-1");
 	//loadFont("-xos4-terminus-medium-r-normal--12-120-72-72-c-60-iso10646-1");
-	//loadFont("lucidasans-10");
+	//loadFont("lucidasans-8");
 	
 	ctheme_clear();
 	if (!ctheme_load(NULL)) {
@@ -348,7 +348,9 @@ void handleButtonPress(xcb_button_press_event_t *event) {
 		selected = cursor;
 	} else if (event->detail == 5) {
 		scrolldown();
+		scrolldown();
 	} else if (event->detail == 4) {
+		scrollup();
 		scrollup();
 	}
 }
@@ -430,6 +432,9 @@ void handleKeypress(xcb_key_press_event_t *event) {
 			selected = cursor;
 		}
 	} else if (keysym == XK_BackSpace) {
+		while ((cursor <= (int) scroll && selected >= (int) scroll) || (selected <= (int) scroll && cursor >= (int) scroll)) {
+			scrollup();
+		}
 		if (cursor == selected) cursor=documentDelete(cursor, 1);
 		else documentDeleteSelection();
 		selected = cursor;
@@ -671,18 +676,10 @@ void scrollup() {
 	size_t c = document_previousLine(scroll);
 	if (scroll != c) cachedScrollLine--;
 	scroll = c;
-	
-	c = document_previousLine(scroll);
-	if (scroll != c) cachedScrollLine--;
-	scroll = c;
 }
 
 void scrolldown() {
 	size_t c = document_nextLine(scroll);
-	if (scroll != c) cachedScrollLine++;
-	scroll = c;
-	
-	c = document_nextLine(scroll);
 	if (scroll != c) cachedScrollLine++;
 	scroll = c;
 }
