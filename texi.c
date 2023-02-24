@@ -10,6 +10,7 @@
 
 #include "ctheme.h"
 #include "clipboard.h"
+#include "syntax.h"
 
 #define XK_MISCELLANY
 #define XK_LATIN1
@@ -26,7 +27,6 @@ xcb_gcontext_t graphics;
 xcb_window_t root;
 xcb_drawable_t window;
 xcb_key_symbols_t *keySymbols;
-
 xcb_atom_t wm_delete_window_atom;
 
 char *documentPath = NULL;
@@ -97,8 +97,9 @@ int main(int argc, char **argv) {
 		XCB_GC_FOREGROUND | XCB_GC_BACKGROUND | XCB_GC_GRAPHICS_EXPOSURES,
 		(uint32_t[]) {screen->black_pixel, screen->white_pixel, 1}
 	);
-	loadFont("-xos4-terminus-medium-r-normal--12-120-72-72-c-60-iso10646-1");
-	//loadFont("lucidasans-8");
+	loadFont("-xos4-terminus-medium-r-normal--14-140-72-72-c-80-iso10646-1");
+	//loadFont("-xos4-terminus-medium-r-normal--12-120-72-72-c-60-iso10646-1");
+	//loadFont("lucidasans-10");
 	
 	ctheme_clear();
 	if (!ctheme_load(NULL)) {
@@ -146,7 +147,7 @@ int main(int argc, char **argv) {
 	keySymbols = xcb_key_symbols_alloc(connection);
 	xcb_flush(connection);
 	
-	int dontExit = 1;
+	bool dontExit = 1;
 	xcb_generic_event_t *event;
 	while (dontExit && (event = xcb_wait_for_event(connection))) {
 		getDimensions();
@@ -156,7 +157,7 @@ int main(int argc, char **argv) {
 			
 			case XCB_CLIENT_MESSAGE:
 			if (((xcb_client_message_event_t *) event)->data.data32[0] == wm_delete_window_atom) {
-				dontExit = 0;
+				dontExit = FALSE;
 			}
 			break;
 			
@@ -180,6 +181,7 @@ int main(int argc, char **argv) {
 		xcb_flush(connection);
 		if (shouldFrameUpdate()) {
 			clear();
+			syntax_move(document, scroll);
 			drawText(document+scroll, cursor-scroll, selected-scroll);
 			drawNumbers(document+scroll, cachedScrollLine+1);
 		}
@@ -227,7 +229,7 @@ void loadFont(char *fontname) {
 	for (char c = 0x20; c < 0x7f; c++) setAscii(c, 1, c);
 	setAscii('\0', 1, ' ');
 	setAscii('\n', 2, ' ', ' ');
-	setAscii('\t', 2, ' ', ' ');
+	setAscii('\t', 3, ' ', ' ', ' ');
 
 	xcb_font_t font = xcb_generate_id(connection);
 	xcb_open_font(connection, font, strlen(fontname), fontname);
@@ -286,7 +288,15 @@ void allocateDocument(size_t newSize) {
 	}
 }
 
+enum SourceFiletype getSourceTypeOfFile(char *path) {
+	size_t length = strlen(path);
+	if (length >= 2 && path[length-2] == '.' && (path[length-1] == 'c' || path[length-1] == 'h')) {
+		return F_C;
+	} else return F_Plaintext;
+}
+
 void loadDocument(char *path) {
+	syntax_init(getSourceTypeOfFile(path));
 	FILE *file = fopen(path, "rb");
 	if (file) {
 		fseek(file, 0, SEEK_END);
@@ -496,21 +506,22 @@ void drawText(char *text, int cursor, int selected) {
 		connection, 0, window, graphics, 2,
 		(const xcb_point_t[]) {{linegutter-4, 0}, {linegutter-4, dimensions.height}}
 	);
-	if (cursor < 0 && selected > 0) {
-		setColor(selectedFG, selectedBG);
-	} else {
-		setColor(defaultFG, defaultBG);
-	}
+	
+	if (cursor < 0 && selected > 0) setColor(selectedFG, selectedBG);
+	
+	syntax_clear();
 	
 	uint16_t x=linegutter, y=0;
 	int n;
 	for (n = 0; text[n] && y+lineheight < dimensions.height; n++) {
+		syntax_step(text+n);
+		
 		if (n == cursor) {
-			if (cursor==selected) {
-				setColor(defaultBG, defaultFG);
-			} else {
-				setColor(selectedFG, selectedBG);
-			}
+			if (cursor == selected) setColor(defaultBG, defaultFG);
+			else setColor(selectedFG, selectedBG);
+		} else if (n <= cursor || n >= selected) {
+			color_t bg = syntax_bg();
+			setColor(syntax_fg(),bg);
 		}
 		
 		uint16_t dx = advance(text[n]);
@@ -524,10 +535,6 @@ void drawText(char *text, int cursor, int selected) {
 			y += lineheight;
 		} else {
 			x += dx;
-		}
-		
-		if ((cursor==selected && n == selected) || n == selected-1) {
-			setColor(defaultFG, defaultBG);
 		}
 	}
 	
@@ -722,7 +729,7 @@ void setColor(uint32_t fg, uint32_t bg) {
 		xcb_change_gc(connection, graphics, XCB_GC_FOREGROUND | XCB_GC_BACKGROUND, (uint32_t[]) {fg, bg});
 	} else if (bg != oldBG) {
 		xcb_change_gc(connection, graphics, XCB_GC_BACKGROUND, (uint32_t[]) {bg});
-	} else if (fg == oldFG) {
+	} else if (fg != oldFG) {
 		xcb_change_gc(connection, graphics, XCB_GC_FOREGROUND, (uint32_t[]) {fg});
 	}
 	oldBG = bg;
