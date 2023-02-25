@@ -44,6 +44,7 @@ color_t edgeColour;
 color_t selectedFG;
 color_t selectedBG;
 
+bool hasSetColorAtLeastOnce = FALSE;
 color_t oldFG;
 color_t oldBG;
 
@@ -91,16 +92,6 @@ int main(int argc, char **argv) {
 	wm_delete_window_atom = atom_reply->atom;
 	free(atom_reply);
 	
-	graphics = xcb_generate_id(connection);
-	xcb_create_gc(
-		connection, graphics, screen->root,
-		XCB_GC_FOREGROUND | XCB_GC_BACKGROUND | XCB_GC_GRAPHICS_EXPOSURES,
-		(uint32_t[]) {screen->black_pixel, screen->white_pixel, 1}
-	);
-	loadFont("-xos4-terminus-medium-r-normal--14-140-72-72-c-80-iso10646-1");
-	//loadFont("-xos4-terminus-medium-r-normal--12-120-72-72-c-60-iso10646-1");
-	//loadFont("lucidasans-8");
-	
 	ctheme_clear();
 	if (!ctheme_load(NULL)) {
 		ctheme_set(COLORSCHEME_DEFAULT, 1, 0x000000, BGR);
@@ -113,6 +104,16 @@ int main(int argc, char **argv) {
 	edgeColour = ctheme_get(COLORSCHEME_DEFAULT, 3, RGB);
 	selectedFG = ctheme_get(COLORSCHEME_SELECTED, 1, RGB);
 	selectedBG = ctheme_get(COLORSCHEME_SELECTED, 2, RGB);
+	
+	graphics = xcb_generate_id(connection);
+	xcb_create_gc(
+		connection, graphics, screen->root,
+		XCB_GC_FOREGROUND | XCB_GC_BACKGROUND | XCB_GC_GRAPHICS_EXPOSURES,
+		(uint32_t[]) {defaultFG, defaultBG, 1}
+	);
+	loadFont("-xos4-terminus-medium-r-normal--14-140-72-72-c-80-iso10646-1");
+	//loadFont("-xos4-terminus-medium-r-normal--12-120-72-72-c-60-iso10646-1");
+	//loadFont("lucidasans-8");
 	
 	window = xcb_generate_id(connection);
 	xcb_create_window(
@@ -262,13 +263,13 @@ void clear() {
 }
 
 void glyph(char c, uint16_t x, uint16_t y) {
-	int g = c;
+	unsigned char g = (unsigned char) c;
 	if (c < 0) g = 0x80;
 	xcb_image_text_16(connection, ascii[g].length, window, graphics, x, lineoffset+y, ascii[g].string);
 }
 
 uint16_t advance(char c) {
-	int g = c;
+	unsigned char g = (unsigned char) c;
 	if (c < 0) g = 0x80;
 	return ascii[g].advance;
 }
@@ -526,8 +527,7 @@ void drawText(char *text, int cursor, int selected) {
 			if (cursor == selected) setColor(defaultBG, defaultFG);
 			else setColor(selectedFG, selectedBG);
 		} else if (n <= cursor || n >= selected) {
-			color_t bg = syntax_bg();
-			setColor(syntax_fg(),bg);
+			setColor(syntax_fg(),syntax_bg());
 		}
 		
 		uint16_t dx = advance(text[n]);
@@ -723,7 +723,7 @@ void getDimensions() {
 }
 
 void setColor(uint32_t fg, uint32_t bg) {
-	if (bg != oldBG && fg != oldFG) {
+	if (!hasSetColorAtLeastOnce || (bg != oldBG && fg != oldFG)) {
 		xcb_change_gc(connection, graphics, XCB_GC_FOREGROUND | XCB_GC_BACKGROUND, (uint32_t[]) {fg, bg});
 	} else if (bg != oldBG) {
 		xcb_change_gc(connection, graphics, XCB_GC_BACKGROUND, (uint32_t[]) {bg});
@@ -732,6 +732,7 @@ void setColor(uint32_t fg, uint32_t bg) {
 	}
 	oldBG = bg;
 	oldFG = fg;
+	hasSetColorAtLeastOnce = TRUE;
 }
 
 void die(char *msg) {
