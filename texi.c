@@ -576,6 +576,9 @@ size_t lengthOfDisplayedText(char *text) {
 size_t getMouseOnText(char *text, uint16_t mx, uint16_t my) {
 	linegutter = getNumGap();
 	uint16_t x=linegutter, y=0;
+	if (mx<x && my>=y && my<y+lineheight) {
+		return 0;
+	}
 	size_t n;
 	for (n = 0; text[n] && y+lineheight < dimensions.height; n++) {
 		uint16_t dx = advance(text[n]);
