@@ -433,7 +433,7 @@ void handleKeypress(xcb_key_press_event_t *event) {
 			selected = cursor;
 		}
 	} else if (keysym == XK_BackSpace) {
-		while ((cursor <= (int) scroll && selected >= (int) scroll) || (selected <= (int) scroll && cursor >= (int) scroll)) {
+		while ((cursor > 0 && cursor <= (int) scroll && selected >= (int) scroll) || (selected > 0 && selected <= (int) scroll && cursor >= (int) scroll)) {
 			scrollup();
 		}
 		if (cursor == selected) cursor=documentDelete(cursor, 1);
