@@ -96,14 +96,29 @@ int main(int argc, char **argv) {
 	if (!ctheme_load(NULL)) {
 		ctheme_set(COLORSCHEME_DEFAULT, 1, 0x000000, BGR);
 		ctheme_set(COLORSCHEME_DEFAULT, 2, 0xffffff, BGR);
-		ctheme_set(COLORSCHEME_SELECTED, 1, 0xffffff, BGR);
-		ctheme_set(COLORSCHEME_SELECTED, 2, 0xff0000, BGR);
+		ctheme_set(COLORSCHEME_SELECTED, 1, 0x000000, BGR);
+		ctheme_set(COLORSCHEME_SELECTED, 2, 0xabffab, BGR);
+		
+		ctheme_set(COLORSCHEME_STRINGS, 1, 0x000000, BGR);
+		ctheme_set(COLORSCHEME_STRINGS, 2, 0xffffaa, BGR);
+		ctheme_set(COLORSCHEME_NUMBERS, 1, 0x000000, BGR);
+		ctheme_set(COLORSCHEME_NUMBERS, 2, 0xbbffff, BGR);
+		ctheme_set(COLORSCHEME_COMMENTS, 1, 0x000000, BGR);
+		ctheme_set(COLORSCHEME_COMMENTS, 2, 0xdddddd, BGR);
+		ctheme_set(COLORSCHEME_OPERATORS, 1, 0xababab, BGR);
+		ctheme_set(COLORSCHEME_OPERATORS, 2, 0xffffff, BGR);
+		ctheme_set(COLORSCHEME_CLASSES, 1, 0x0000ff, BGR);
+		ctheme_set(COLORSCHEME_CLASSES, 2, 0xffffff, BGR);
+		ctheme_set(COLORSCHEME_KEYWORDS, 1, 0xff0000, BGR);
+		ctheme_set(COLORSCHEME_KEYWORDS, 2, 0xffffff, BGR);
+		ctheme_set(COLORSCHEME_SPECIAL, 1, 0xff0000, BGR);
+		ctheme_set(COLORSCHEME_SPECIAL, 2, 0xffffff, BGR);
 	}
-	defaultFG  = ctheme_get(COLORSCHEME_DEFAULT, 1, RGB);
-	defaultBG  = ctheme_get(COLORSCHEME_DEFAULT, 2, RGB);
-	edgeColour = ctheme_get(COLORSCHEME_DEFAULT, 3, RGB);
-	selectedFG = ctheme_get(COLORSCHEME_SELECTED, 1, RGB);
-	selectedBG = ctheme_get(COLORSCHEME_SELECTED, 2, RGB);
+	defaultFG  = ctheme_get(COLORSCHEME_DEFAULT, 1, BGR);
+	defaultBG  = ctheme_get(COLORSCHEME_DEFAULT, 2, BGR);
+	edgeColour = ctheme_get(COLORSCHEME_DEFAULT, 3, BGR);
+	selectedFG = ctheme_get(COLORSCHEME_SELECTED, 1, BGR);
+	selectedBG = ctheme_get(COLORSCHEME_SELECTED, 2, BGR);
 	
 	graphics = xcb_generate_id(connection);
 	xcb_create_gc(

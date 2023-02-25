@@ -64,8 +64,8 @@ void syntax_step(char *string) {
 
 void syntax_span(size_t length, colorscheme_id_t id) {
 	remainingLengthOfToken = length;
-	fg = ctheme_get(id, 1, RGB);
-	bg = ctheme_get(id, 2, RGB);
+	fg = ctheme_get(id, 1, BGR);
+	bg = ctheme_get(id, 2, BGR);
 }
 
 void syntax_step_Plaintext(char *string) {
