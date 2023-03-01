@@ -448,9 +448,6 @@ void handleKeypress(xcb_key_press_event_t *event) {
 			selected = cursor;
 		}
 	} else if (keysym == XK_BackSpace) {
-		while ((cursor > 0 && cursor <= (int) scroll && selected >= (int) scroll) || (selected > 0 && selected <= (int) scroll && cursor >= (int) scroll)) {
-			scrollup();
-		}
 		if (cursor == selected) cursor=documentDelete(cursor, 1);
 		else documentDeleteSelection();
 		selected = cursor;
@@ -501,13 +498,13 @@ void advanceByOneWrappedLine(char **text, uint16_t *y) {
 }
 
 int drawLineNumber(int line, char **text, uint16_t *y) {
-	drawnum(line++, linegutter, *y);
+	drawnum(line++, 0, *y);
 	advanceByOneWrappedLine(text, y);
 	return *y+lineheight < dimensions.height && **text ? line : 0;
 }
 
 void drawNumbers(char *text, int line) {
-	linegutter = 0;
+	linegutter = getNumGap();
 	uint16_t y = 0;
 	setColor(defaultFG, defaultBG);
 	while ((line = drawLineNumber(line, &text, &y))) {
@@ -561,7 +558,7 @@ void drawText(char *text, int cursor, int selected) {
 	
 	if (n == cursor) {
 		setColor(defaultBG, defaultFG);
-	}
+	} else setColor(defaultFG, defaultBG);
 	if (y+lineheight < dimensions.height) {
 		glyph(text[n], x, y);
 	}
@@ -719,11 +716,19 @@ int documentInsertChar(size_t where, char what) {
 
 int documentDelete(size_t where, size_t size) {
 	size = size > where ? where : size;
+	
+	int offset = 0;
+	for (char *s = document+where-size; s < document+where && s < document+scroll; s++) {
+		if (*s == '\n') cachedScrollLine--;
+		offset++;
+	}
+	scroll-=offset;
 	if (size > 0) {
 		memmove(document+where-size, document+where, strlen(document+cursor)+1);
 		where-=size;
 		documentCachedLength-=size;
 	}
+	while (scroll>0 && document[scroll-1]!='\n') scroll--;
 	return where;
 }
 
