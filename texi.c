@@ -126,9 +126,13 @@ int main(int argc, char **argv) {
 		XCB_GC_FOREGROUND | XCB_GC_BACKGROUND | XCB_GC_GRAPHICS_EXPOSURES,
 		(uint32_t[]) {defaultFG, defaultBG, 1}
 	);
-	loadFont("-xos4-terminus-medium-r-normal--14-140-72-72-c-80-iso10646-1");
+	//loadFont("-xos4-terminus-bold-r-normal--14-140-72-72-c-80-iso10646-1");
+	//loadFont("-xos4-terminus-medium-r-normal--14-140-72-72-c-80-iso10646-1");
 	//loadFont("-xos4-terminus-medium-r-normal--12-120-72-72-c-60-iso10646-1");
-	//loadFont("lucidasans-8");
+	//loadFont("-xos4-terminus-medium-r-normal--12-120-72-72-c-60-iso10646-1");
+	//loadFont("-adobe-helvetica-bold-r-normal--12-120-72-72-c-60-iso10646-1");
+	loadFont("-*-lucida-bold-r-normal-sans-14-140-*-*-*-*-iso10646-*");
+	//loadFont("-b&h-lucida-medium-r-normal-sans-17-120-100-100-p-96-iso10646-1");
 	
 	window = xcb_generate_id(connection);
 	xcb_create_window(
@@ -512,6 +516,15 @@ void drawNumbers(char *text, int line) {
 	}
 }
 
+void drawCursor(uint16_t x, uint16_t y) {
+	setColor(edgeColour, edgeColour);
+	xcb_poly_line(
+		connection, 0, window, graphics, 2,
+		(const xcb_point_t[]) {{x, y}, {x, y+lineheight}}
+	);
+	setColor(syntax_fg(),syntax_bg());
+}
+
 void drawText(char *text, int cursor, int selected) {
 	if (selected < cursor) {
 		int temp = cursor;
@@ -535,12 +548,8 @@ void drawText(char *text, int cursor, int selected) {
 	for (n = 0; text[n] && y+lineheight < dimensions.height; n++) {
 		syntax_step(text+n);
 		
-		if (n == cursor) {
-			if (cursor == selected) setColor(defaultBG, defaultFG);
-			else setColor(selectedFG, selectedBG);
-		} else if (n <= cursor || n >= selected) {
-			setColor(syntax_fg(),syntax_bg());
-		}
+		if (n == cursor && selected > cursor) setColor(selectedFG, selectedBG);
+		if (n < cursor || n == selected) setColor(syntax_fg(),syntax_bg());
 		
 		uint16_t dx = advance(text[n]);
 		if (x+dx >= dimensions.width) {
@@ -548,6 +557,7 @@ void drawText(char *text, int cursor, int selected) {
 			y += lineheight;
 		}
 		glyph(text[n], x, y);
+		if (n == cursor && cursor == selected) drawCursor(x,y);
 		if (text[n] == '\n') {
 			x = linegutter;
 			y += lineheight;
@@ -555,14 +565,11 @@ void drawText(char *text, int cursor, int selected) {
 			x += dx;
 		}
 	}
-	
-	if (n == cursor) {
-		setColor(defaultBG, defaultFG);
-	} else setColor(defaultFG, defaultBG);
+	setColor(defaultFG, defaultBG);
 	if (y+lineheight < dimensions.height) {
 		glyph(text[n], x, y);
+		if (n == cursor) drawCursor(x,y);
 	}
-	setColor(defaultFG, defaultBG);
 }
 
 size_t lengthOfDisplayedText(char *text) {
