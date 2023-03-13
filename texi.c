@@ -409,6 +409,8 @@ void pasteWholeBuffer() {
 void handleKeypress(xcb_key_press_event_t *event) {
 	xcb_keysym_t keysym = getKeysym(event->detail);
 	
+	int initialSelected = selected;
+	
 	if (event->state & XCB_MOD_MASK_CONTROL) {
 		if (keysym == XK_a) {
 			cursor = 0;
@@ -472,6 +474,16 @@ void handleKeypress(xcb_key_press_event_t *event) {
 	} else if (keysym >= XK_space && keysym <= XK_asciitilde) {
 		cursor=documentInsertChar(documentDeleteSelection(), event->state & (XCB_MOD_MASK_SHIFT | XCB_MOD_MASK_LOCK) ? asciiupper(keysym) : (char) keysym);
 		selected = cursor;
+	}
+	
+	if (initialSelected != selected) {
+		if (selected < (int) scroll || selected > (int) (scroll + lengthOfDisplayedText(document+scroll))) {
+			scroll = selected;
+			if (scroll > 0 && document[scroll-1] == '\n') scroll--;
+			while (scroll > 0 && document[scroll-1] != '\n') scroll--;
+			cachedScrollLine = 0;
+			for (char *s = document; s < document+scroll; s++) if (*s=='\n') cachedScrollLine++;
+		}
 	}
 }
 
@@ -539,9 +551,10 @@ void drawText(char *text, int cursor, int selected) {
 		(const xcb_point_t[]) {{linegutter-4, 0}, {linegutter-4, dimensions.height}}
 	);
 	
-	if (cursor < 0 && selected > 0) setColor(selectedFG, selectedBG);
-	
 	syntax_clear();
+	
+	if (cursor < 0 && selected > 0) setColor(selectedFG, selectedBG);
+	else setColor(syntax_fg(),syntax_bg());
 	
 	uint16_t x=linegutter, y=0;
 	int n;
@@ -549,7 +562,7 @@ void drawText(char *text, int cursor, int selected) {
 		syntax_step(text+n);
 		
 		if (n == cursor && selected > cursor) setColor(selectedFG, selectedBG);
-		if (n < cursor || n == selected) setColor(syntax_fg(),syntax_bg());
+		if (n < cursor || n >= selected) setColor(syntax_fg(),syntax_bg());
 		
 		uint16_t dx = advance(text[n]);
 		if (x+dx >= dimensions.width) {
@@ -724,18 +737,12 @@ int documentInsertChar(size_t where, char what) {
 int documentDelete(size_t where, size_t size) {
 	size = size > where ? where : size;
 	
-	int offset = 0;
-	for (char *s = document+where-size; s < document+where && s < document+scroll; s++) {
-		if (*s == '\n') cachedScrollLine--;
-		offset++;
-	}
-	scroll-=offset;
 	if (size > 0) {
 		memmove(document+where-size, document+where, strlen(document+cursor)+1);
 		where-=size;
 		documentCachedLength-=size;
 	}
-	while (scroll>0 && document[scroll-1]!='\n') scroll--;
+	
 	return where;
 }
 
