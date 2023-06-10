@@ -20,8 +20,9 @@ size_t remainingLengthOfToken = 0;
 
 void syntax_step_Plaintext();
 void syntax_step_C();
+void syntax_step_Lua();
 
-void (*syntaxes[F_None])(char *) = {syntax_step_Plaintext, syntax_step_C};
+void (*syntaxes[F_None])(char *) = {syntax_step_Plaintext, syntax_step_C, syntax_step_Lua};
 
 void syntax_init(enum SourceFiletype type) {
 	sourcetype = type;
@@ -161,6 +162,91 @@ void syntax_step_C(char *string) {
 		else syntax_span(n, COLORSCHEME_DEFAULT);
 	} else if (ispunct(string[0])) {
 		syntax_span(1, COLORSCHEME_OPERATORS);
+	} else {
+		syntax_span((size_t) 1, COLORSCHEME_DEFAULT);
+	}
+}
+
+const char *luakeywords[] = {
+	"and", "break", "do", "else", "elseif", "end",
+	"false", "for", "function", "goto", "if", "in",
+	"local", "nil", "not", "or", "repeat", "return",
+	"then", "true", "until", "while", NULL
+};
+
+
+bool isLuaKeyword(char *string, size_t length) {
+	for (int i = 0; luakeywords[i]; i++) {
+		if (length == strlen(luakeywords[i])) {
+			if (strncmp(string, luakeywords[i], length)==0) {
+				return TRUE;
+			}
+		}
+	}
+	return FALSE;
+}
+
+void syntax_step_Lua(char *string) {
+	if (string[0]=='-' && string[1]=='-') {
+		int n = 2;
+		while (string[n] && string[n] != '\n') n++;
+		
+		syntax_span(n, COLORSCHEME_COMMENTS);
+	} else if (string[0]=='-' && string[1]=='-' && string[2]=='[' && string[3]=='[') {
+		int n = 2;
+		while (string[n] && !(string[n] == ']' && string[n+1] == ']')) n++;
+		if (string[n]) n+=2;
+		
+		syntax_span(n, COLORSCHEME_COMMENTS);
+	} else if (string[0]=='[' && string[1]=='[') {
+		int n = 2;
+		while (string[n] && !(string[n] == ']' && string[n+1] == ']')) n++;
+		if (string[n]) n+=2;
+		
+		syntax_span(n, COLORSCHEME_STRINGS);
+	} else if (string[0]=='"') {
+		int n = 1;
+		while (string[n] && string[n] != '"') {
+			if (string[n++] == '\\') n++;
+		}
+		if (string[n]) n++;
+		
+		syntax_span(n, COLORSCHEME_STRINGS);
+	} else if (string[0]=='\'') {
+		int n = 1;
+		while (string[n] && string[n] != '\'') {
+			if (string[n++] == '\\') n++;
+		}
+		if (string[n]) n++;
+		
+		syntax_span(n, COLORSCHEME_STRINGS);
+	} else if (isdigit(string[0])) {
+		int n = 0;
+		if (string[0]=='0' && string[1]=='b') {
+			n+=2;
+			while (string[n] && string[n]>='0' && string[n]<='1') n++;
+		} else if (string[0]=='0' && string[1]=='x') {
+			n+=2;
+			while (isxdigit(string[n])) n++;
+		} else {
+			while (isdigit(string[n])) n++;
+		}
+		syntax_span(n, COLORSCHEME_NUMBERS);
+	} else if (isalpha(string[0]) || string[0]=='_') {
+		int n = 1;
+		while (isalnum(string[n]) || string[n]=='_') n++;
+		
+		if (isLuaKeyword(string, n)) {
+			syntax_span(n, COLORSCHEME_KEYWORDS);
+		} else {
+			syntax_span(n, COLORSCHEME_DEFAULT);
+		}
+	} else if (ispunct(string[0])) {
+		syntax_span(1, COLORSCHEME_OPERATORS);
+	} else if (isspace(string[0])) {
+		int n = 1;
+		while (isspace(string[n])) n++;
+		syntax_span(n, COLORSCHEME_DEFAULT);
 	} else {
 		syntax_span((size_t) 1, COLORSCHEME_DEFAULT);
 	}

@@ -22,6 +22,32 @@ typedef _Bool bool;
 
 #define DOC_SIZE_STEP_SIZE 4096
 
+void msleep(unsigned long ms);
+
+void die(char *msg);
+
+int strstart(char *pattern, char *string);
+int strend(char *pattern, char *string);
+
+void loadDocument(char *path);
+void loadDocumentFromString(char *string);
+
+void loadFont(char *fontname);
+
+void handleButtonPress(xcb_button_press_event_t *event);
+void handleButtonRelease(xcb_button_release_event_t *event);
+void handleKeypress(xcb_key_press_event_t *event);
+
+void drawNumbers(char *text, int line);
+void drawText(char *text, int cursor, int selected);
+size_t lengthOfDisplayedText(char *text);
+size_t getMouseOnText(char *text, uint16_t mx, uint16_t my);
+
+bool shouldFrameUpdate();
+void clear();
+void getDimensions();
+void setColor(uint32_t fg, uint32_t bg);
+
 xcb_connection_t *connection;
 xcb_gcontext_t graphics;
 xcb_window_t root;
@@ -61,27 +87,6 @@ struct AsciiEntry {
 	xcb_char2b_t string[7];
 	uint8_t length;
 } ascii[0x81];
-
-void die(char *msg);
-
-void loadDocument(char *path);
-void loadDocumentFromString(char *string);
-
-void loadFont(char *fontname);
-
-void handleButtonPress(xcb_button_press_event_t *event);
-void handleButtonRelease(xcb_button_release_event_t *event);
-void handleKeypress(xcb_key_press_event_t *event);
-
-void drawNumbers(char *text, int line);
-void drawText(char *text, int cursor, int selected);
-size_t lengthOfDisplayedText(char *text);
-size_t getMouseOnText(char *text, uint16_t mx, uint16_t my);
-
-bool shouldFrameUpdate();
-void clear();
-void getDimensions();
-void setColor(uint32_t fg, uint32_t bg);
 
 int main(int argc, char **argv) {
 	connection = xcb_connect(NULL, NULL);
@@ -309,10 +314,13 @@ void allocateDocument(size_t newSize) {
 }
 
 enum SourceFiletype getSourceTypeOfFile(char *path) {
-	size_t length = strlen(path);
-	if (length >= 2 && path[length-2] == '.' && (path[length-1] == 'c' || path[length-1] == 'h')) {
+	if (strend(".c", path) || strend(".h", path) || strend(".cpp", path) || strend(".hpp", path) || strend(".glsl", path)) {
 		return F_C;
-	} else return F_Plaintext;
+	} else if (strend(".lua", path)) {
+		return F_Lua;
+	} else {
+		return F_Plaintext;
+	}
 }
 
 void loadDocument(char *path) {
@@ -772,7 +780,27 @@ void setColor(uint32_t fg, uint32_t bg) {
 	hasSetColorAtLeastOnce = TRUE;
 }
 
+void msleep(unsigned long ms) {
+    struct timespec ts;
+    ts.tv_sec = ms / 1000;
+    ts.tv_nsec = (ms % 1000) * 1000000;
+    nanosleep(&ts, &ts);
+}
+
 void die(char *msg) {
 	fprintf(stderr, "ERROR: %s", msg);
 	exit(EXIT_FAILURE);
+}
+
+int strstart(char *pattern, char *string) {
+	while (*pattern != 0 && *pattern == *string) {
+		pattern++; string++;
+	}
+	return *pattern == 0;
+}
+
+int strend(char *pattern, char *string) {
+	int off = strlen(string) - strlen(pattern);
+	if (off >= 0) return strstart(pattern, string+off);
+	return 0;
 }

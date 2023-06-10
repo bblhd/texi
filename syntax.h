@@ -4,7 +4,7 @@
 #include "ctheme.h"
 
 enum SourceFiletype {
-	F_Plaintext, F_C, F_None
+	F_Plaintext, F_C, F_Lua, F_None
 };
 
 void syntax_init(enum SourceFiletype);
