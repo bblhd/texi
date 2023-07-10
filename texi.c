@@ -134,9 +134,9 @@ int main(int argc, char **argv) {
 	//loadFont("-xos4-terminus-bold-r-normal--14-140-72-72-c-80-iso10646-1");
 	//loadFont("-xos4-terminus-medium-r-normal--14-140-72-72-c-80-iso10646-1");
 	//loadFont("-xos4-terminus-medium-r-normal--12-120-72-72-c-60-iso10646-1");
-	//loadFont("-xos4-terminus-medium-r-normal--12-120-72-72-c-60-iso10646-1");
+	loadFont("-xos4-terminus-medium-r-normal--12-120-72-72-c-60-iso10646-1");
 	//loadFont("-adobe-helvetica-bold-r-normal--12-120-72-72-c-60-iso10646-1");
-	loadFont("-*-lucida-bold-r-normal-sans-14-140-*-*-*-*-iso10646-*");
+	//loadFont("-*-lucida-bold-r-normal-sans-14-140-*-*-*-*-iso10646-*");
 	//loadFont("-b&h-lucida-medium-r-normal-sans-17-120-100-100-p-96-iso10646-1");
 	
 	window = xcb_generate_id(connection);
@@ -175,42 +175,39 @@ int main(int argc, char **argv) {
 	bool dontExit = 1;
 	xcb_generic_event_t *event;
 	while (dontExit && (event = xcb_wait_for_event(connection))) {
-		getDimensions();
-		switch (event->response_type & ~0x80) {
-			case XCB_EXPOSE:
-			break;
+		do {
+			switch (event->response_type & ~0x80) {
+				case XCB_CLIENT_MESSAGE: 
+				dontExit = ((xcb_client_message_event_t *) event)->data.data32[0]
+					!= wm_delete_window_atom;
+				break;
 			
-			case XCB_CLIENT_MESSAGE:
-			if (((xcb_client_message_event_t *) event)->data.data32[0] == wm_delete_window_atom) {
-				dontExit = FALSE;
+				case XCB_KEY_PRESS:
+				handleKeypress((xcb_key_press_event_t *) event);
+				break;
+			
+				case XCB_BUTTON_PRESS:
+				handleButtonPress((xcb_button_press_event_t *) event);
+				break;
+			
+				case XCB_BUTTON_RELEASE:
+				handleButtonRelease((xcb_button_release_event_t *) event);
+				break;
+			
+				case XCB_SELECTION_REQUEST:
+				clipboard_selectionRequest((xcb_selection_request_event_t *) event);
+				break;
 			}
-			break;
-			
-			case XCB_KEY_PRESS:
-			handleKeypress((xcb_key_press_event_t *) event);
-			break;
-			
-			case XCB_BUTTON_PRESS:
-			handleButtonPress((xcb_button_press_event_t *) event);
-			break;
-			
-			case XCB_BUTTON_RELEASE:
-			handleButtonRelease((xcb_button_release_event_t *) event);
-			break;
-			
-			case XCB_SELECTION_REQUEST:
-			clipboard_selectionRequest((xcb_selection_request_event_t *) event);
-			break;
-		}
-		free(event);
+			free(event);
+		} while ((event = xcb_poll_for_event(connection)));
+		getDimensions();
 		xcb_flush(connection);
-		if (shouldFrameUpdate()) {
-			clear();
-			syntax_move(document, scroll);
-			drawText(document+scroll, cursor-scroll, selected-scroll);
-			drawNumbers(document+scroll, cachedScrollLine+1);
-		}
+		clear();
+		syntax_move(document, scroll);
+		drawText(document+scroll, cursor-scroll, selected-scroll);
+		drawNumbers(document+scroll, cachedScrollLine+1);
 		xcb_flush(connection);
+		msleep(20);
 	}
 	
 	free(document);
@@ -249,6 +246,7 @@ void setAscii(unsigned char c, size_t n, ...) {
 }
 
 void loadFont(char *fontname) {
+	setAscii(0x7f, 1, 0xa4);
 	setAscii(0x80, 1, 0xa4);
 	for (char c = 0; c < 0x20; c++) setAscii(c, 1, 0xa4);
 	for (char c = 0x20; c < 0x7f; c++) setAscii(c, 1, c);
