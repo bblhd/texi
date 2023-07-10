@@ -86,7 +86,7 @@ struct AsciiEntry {
 	uint16_t advance;
 	xcb_char2b_t string[7];
 	uint8_t length;
-} ascii[0x81];
+} ascii[0x80];
 
 int main(int argc, char **argv) {
 	connection = xcb_connect(NULL, NULL);
@@ -181,19 +181,15 @@ int main(int argc, char **argv) {
 				dontExit = ((xcb_client_message_event_t *) event)->data.data32[0]
 					!= wm_delete_window_atom;
 				break;
-			
 				case XCB_KEY_PRESS:
 				handleKeypress((xcb_key_press_event_t *) event);
 				break;
-			
 				case XCB_BUTTON_PRESS:
 				handleButtonPress((xcb_button_press_event_t *) event);
 				break;
-			
 				case XCB_BUTTON_RELEASE:
 				handleButtonRelease((xcb_button_release_event_t *) event);
 				break;
-			
 				case XCB_SELECTION_REQUEST:
 				clipboard_selectionRequest((xcb_selection_request_event_t *) event);
 				break;
@@ -232,23 +228,19 @@ bool shouldFrameUpdate() {
 	return yes;
 }
 
-void setAscii(unsigned char c, size_t n, ...) {
-	int g = c;
-	if (g < 0) g = 0x80;
-	ascii[g].length = n;
+void setAscii(char c, size_t n, ...) {
+	if (c < 0) return;
+	ascii[c].length = n;
 	va_list parts;
 	va_start(parts, n);
 	for (size_t i = 0; i < n && i < 7; i++) {
 		int part = va_arg(parts, int);
-		ascii[g].string[i] = (xcb_char2b_t) {(part>>8)&0xff, part&0xff};
+		ascii[c].string[i] = (xcb_char2b_t) {(part>>8)&0xff, part&0xff};
 	}
 	va_end(parts);
 }
 
 void loadFont(char *fontname) {
-	setAscii(0x7f, 1, 0xa4);
-	setAscii(0x80, 1, 0xa4);
-	for (char c = 0; c < 0x20; c++) setAscii(c, 1, 0xa4);
 	for (char c = 0x20; c < 0x7f; c++) setAscii(c, 1, c);
 	setAscii('\0', 1, ' ');
 	setAscii('\n', 2, ' ', ' ');
@@ -256,15 +248,16 @@ void loadFont(char *fontname) {
 
 	xcb_font_t font = xcb_generate_id(connection);
 	xcb_open_font(connection, font, strlen(fontname), fontname);
-    
 	xcb_change_gc(connection, graphics, XCB_GC_FONT, (uint32_t[]) {font});
 	
-	xcb_query_text_extents_cookie_t advancesCookies[0x81];
-	for (char c = 0; c >= 0; c++) {
+	xcb_query_text_extents_cookie_t advancesCookies[0x80];
+	for (char c = 0; c >= 0; c++) if (ascii[c].length) {
 		advancesCookies[c] = xcb_query_text_extents(connection, font, ascii[c].length, ascii[c].string);
 	}
 	
-	for (char c = 0; c >= 0; c++) {
+	xcb_close_font(connection, font);
+	
+	for (char c = 0; c >= 0; c++) if (ascii[c].length) {
 		xcb_query_text_extents_reply_t *reply = xcb_query_text_extents_reply(connection, advancesCookies[c], NULL);
 		ascii[c].advance = reply->overall_width;
 		if (lineoffset < reply->font_ascent) {
@@ -275,7 +268,6 @@ void loadFont(char *fontname) {
 		}
 		free(reply);
 	}
-	xcb_close_font(connection, font);
 	
 	ascii['\t'].advance = 32;
 };
@@ -284,16 +276,30 @@ void clear() {
 	xcb_clear_area(connection, 0, window, 0, 0, 0, 0);
 }
 
-void glyph(char c, uint16_t x, uint16_t y) {
-	unsigned char g = (unsigned char) c;
-	if (c < 0) g = 0x80;
-	xcb_image_text_16(connection, ascii[g].length, window, graphics, x, lineoffset+y, ascii[g].string);
+uint16_t advance(char c) {
+	if (c >= 0 && ascii[c].length) return ascii[c].advance;
+	else {
+		char buffer[8];
+		sprintf(buffer, "[0x%x]", c);
+		uint16_t a = 0;
+		for (char *s = buffer; *s; s++) {
+			a += advance(*s);
+		}
+		return a;
+	}
 }
 
-uint16_t advance(char c) {
-	unsigned char g = (unsigned char) c;
-	if (c < 0) g = 0x80;
-	return ascii[g].advance;
+void glyph(char c, uint16_t x, uint16_t y) {
+	if (c >= 0 && ascii[c].length) {
+		xcb_image_text_16(connection, ascii[c].length, window, graphics, x, lineoffset+y, ascii[c].string);
+	} else {
+		char buffer[8];
+		sprintf(buffer, "[0x%x]", c);
+		for (char *s = buffer; *s; s++) {
+			glyph(*s, x, y);
+			x += advance(*s);
+		}
+	}
 }
 
 uint16_t getNumGap() {
