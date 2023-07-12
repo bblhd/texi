@@ -12,6 +12,8 @@
 #define XK_LATIN1
 #include <X11/keysymdef.h>
 
+#include "clipboard.h"
+
 typedef struct Document doc_t;
 
 typedef void (*event_handler_t)(xcb_generic_event_t *);
@@ -75,14 +77,13 @@ const event_handler_t eventHandlers[] = {
 	[XCB_BUTTON_PRESS] = (event_handler_t) handleButtonPress,
 	[XCB_BUTTON_RELEASE] = (event_handler_t) handleButtonRelease,
 	[XCB_KEY_PRESS] = (event_handler_t) handleKeyPress,
-	[XCB_SELECTION_REQUEST] = (event_handler_t) handleSelectionRequest,
+	[XCB_SELECTION_REQUEST] = (event_handler_t) clipboard_selectionRequest,
 };
 
 doc_t *globalDocument;
 
 int main(int argc, char **argv) {
 	doc_t *document = load(NULL,argc > 1 ? argv[1] : NULL);
-	if (!document) return 1;
 	globalDocument = document;
 	setup(argc > 1 ? argv[1] : "scratch file");
 	while (dontExit) events();
@@ -105,8 +106,8 @@ void setup(char *windowTitle) {
 	
 	graphics = xcb_generate_id(connection);
 	
-	//char *fontname = "-xos4-terminus-medium-r-normal--12------iso10646-1";
 	char *fontname = "-b&h-lucida-medium-r-normal-sans-10------iso10646-1";
+	//char *fontname = "fixed";
 	font = xcb_generate_id(connection);
 	xcb_open_font(connection, font, strlen(fontname), fontname);
 	
@@ -162,6 +163,8 @@ void setup(char *windowTitle) {
 	
 	keySymbols = xcb_key_symbols_alloc(connection);
 	
+	clipboard_init(connection, window, "TEXI_CLIPBOARD");
+	
 	xcb_flush(connection);
 }
 
@@ -201,7 +204,7 @@ void glyph(char c, int x, int y) {
 
 int advance(char c) {
 	if (c == '\t') {
-		return 18;
+		return 24;
 	} else if (c >= 0x20 && c < 0x7F) {
 		return advanceLookupTable[c-0x20];
 	} else {
@@ -249,11 +252,13 @@ doc_t *load(doc_t *document, char *path) {
 					);
 					fclose(file);
 				};
-			} else lengthen(document, 0);
+			} else if (!lengthen(document, 0)) {
+				die("Unable to create document!");
+			}
 			return document;
-		}; 
+		};
 	};
-	return NULL;
+	die("Unable to create document!");
 }
 
 void save(doc_t *document) {
@@ -398,7 +403,7 @@ void events() {
 	
 	draw(globalDocument);
 	xcb_flush(connection);
-	msleep(50);
+	msleep(25);
 }
 
 void drawCursor(uint16_t x, uint16_t y) {
@@ -485,6 +490,23 @@ void handleButtonRelease(xcb_button_release_event_t *event) {
 	};
 }
 
+void copyToClipboard(char *d, int from, int to) {
+	clipboard_set(
+		d + (from < to ? from : to),
+		from < to ? to-from : from-to
+	);
+}
+
+void copyFromClipboard(doc_t *document) {
+	char buffer[1024];
+	int length,offset=0;
+	do {
+		length = clipboard_get(buffer, 1024, offset);
+		offset += length;
+		if (length > 0) insert(document, buffer, length);
+	} while (length == 1024);
+}
+
 void handleKeyPress(xcb_key_press_event_t *event) {
 	xcb_keysym_t keysym = getKeysym(event->detail);
 	int initialSelected = globalDocument->selection;
@@ -496,6 +518,10 @@ void handleKeyPress(xcb_key_press_event_t *event) {
 		if (keysym == XK_a) {
 			moveCursor(globalDocument, 0);
 			moveSelection(globalDocument, globalDocument->length);
+		} else if (keysym == XK_c) {
+			copyToClipboard(globalDocument->data, globalDocument->cursor, globalDocument->selection);
+		} else if (keysym == XK_v) {
+			copyFromClipboard(globalDocument);
 		} else if (keysym == XK_s) {
 			save(globalDocument);
 		} else if (keysym == XK_r) {
