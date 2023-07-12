@@ -52,7 +52,7 @@ void clipboard_init(xcb_connection_t *connection, xcb_window_t window, char *lab
 }
 
 //clipboard_get: reads the clipboard from its current owner, copying it to the provided buffer
-size_t clipboard_get(char *str, size_t length, size_t offset) {
+int clipboard_get(char *str, int length, int offset) {
 	xcb_convert_selection(
 		clipboard.connection, clipboard.window, atoms[selection], 
 		XCB_ATOM_STRING, property,
@@ -73,7 +73,7 @@ size_t clipboard_get(char *str, size_t length, size_t offset) {
 	);
 	
 	if (reply && xcb_get_property_value_length(reply) > 0) {
-		length = length < (size_t) xcb_get_property_value_length(reply) ? length : (size_t) xcb_get_property_value_length(reply);
+		length = length < xcb_get_property_value_length(reply) ? length : xcb_get_property_value_length(reply);
 		memcpy(str, xcb_get_property_value(reply), length);
 		free(reply);
 	} else if (clipboard.source && clipboard.length > offset) {
@@ -88,7 +88,7 @@ size_t clipboard_get(char *str, size_t length, size_t offset) {
 }
 
 //clipboard_set: takes ownership of the clipboard and caches the given string, which will later be provided to those requesting data from the clipboard
-void clipboard_set(char *str, size_t length) {
+void clipboard_set(char *str, int length) {
 	if (clipboard.source) free(clipboard.source);
 	clipboard.source = malloc(length);
 	clipboard.length = length;

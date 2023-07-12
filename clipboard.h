@@ -5,8 +5,8 @@
 #include <xcb/xproto.h>
 
 void clipboard_init(xcb_connection_t *, xcb_window_t, char *label);
-size_t clipboard_get(char *str, size_t length, size_t offset);
-void clipboard_set(char *str, size_t length);
+int clipboard_get(char *str, int length, int offset);
+void clipboard_set(char *str, int length);
 void clipboard_selectionRequest(xcb_selection_request_event_t *event);
 
 #endif

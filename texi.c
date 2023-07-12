@@ -43,7 +43,6 @@ void handleClientMessage(xcb_client_message_event_t *event);
 void handleButtonPress(xcb_button_press_event_t *event);
 void handleButtonRelease(xcb_button_release_event_t *event);
 void handleKeyPress(xcb_key_press_event_t *event);
-void handleSelectionRequest(xcb_selection_request_event_t *event);
 
 void setColor(uint32_t fg, uint32_t bg);
 xcb_keysym_t getKeysym(xcb_keycode_t keycode);
@@ -383,6 +382,65 @@ void scrollUp(doc_t *document) {
 	document->scroll = i;
 }
 
+int moveLineUp(char *d, int i, int length) {
+	int old = i;
+	int subline = getSubline(d, i);
+	i = startOfLine(d, i);
+	int j = i, w = 0;
+	while (j < old) {
+		w += advance(d[j]);
+		if (w >= winwidth) w = 0;
+		else j++;
+	}
+	if (w + advance(d[j]) >= winwidth) w = 0;
+	if (subline == 0) {
+		if (i > 0) {
+			subline = getSubline(d, i-1);
+			i = startOfLine(d, i-1);
+		};
+	} else subline--;
+	while (subline > 0) {
+		i = advanceSubline(d, i, length);
+		subline--;
+	};
+	int x = 0;
+	while (i < length && d[i] != '\n' && x < w) {
+		x += advance(d[i]);
+		if (x >= winwidth) {
+			x = 0;
+		} else i++;
+	};
+	return i;
+}
+
+int moveLineDown(char *d, int i, int length) {
+	int old = i;
+	int subline = getSubline(d, i);
+	i = startOfLine(d, i);
+	int w = 0;
+	while (i < old) {
+		w += advance(d[i]);
+		if (w >= winwidth) w = 0;
+		else i++;
+	};
+	if (w + advance(d[i]) >= winwidth) w = 0;
+	int x = w;
+	do {
+		x += advance(d[i]);
+		if (d[i] == '\n' || x >= winwidth) {
+			if (d[i] == '\n') i++;
+			x = 0;
+		} else i++;
+	} while (x != 0);
+	while (i < length && d[i] != '\n' && x < w) {
+		x += advance(d[i]);
+		if (x >= winwidth) {
+			x = 0;
+		} else i++;
+	};
+	return i;
+}
+
 void events() {
 	xcb_generic_event_t *event = xcb_wait_for_event(connection);
 	do {
@@ -435,7 +493,7 @@ void draw(doc_t *document) {
 				glyph(' ', x, y);
 				if (drawc) drawCursor(x,y);
 				i++;
-			}
+			};
 			y += lineheight;
 			x = 0;
 		} else {
@@ -462,6 +520,21 @@ int findPositionIn(doc_t *document, int mx, int y) {
 		} else i++;
 	};
 	return i;
+}
+
+int isPositionOutsideBounds(doc_t *document, int p) {
+	int x = 0, y = 0;
+	char *d = document->data;
+	int i = document->scroll;
+	while (i < document->length && y < winheight && i != p) {
+		x += advance(d[i]);
+		if (d[i] == '\n' || x >= winwidth) {
+			if (d[i] == '\n') i++;
+			y += lineheight;
+			x = 0;
+		} else i++;
+	};
+	return i != p;
 }
 
 void handleClientMessage(xcb_client_message_event_t *event) {
@@ -509,7 +582,7 @@ void copyFromClipboard(doc_t *document) {
 
 void handleKeyPress(xcb_key_press_event_t *event) {
 	xcb_keysym_t keysym = getKeysym(event->detail);
-	int initialSelected = globalDocument->selection;
+	int initialSelection = globalDocument->selection;
 	
 	bool control = event->state & XCB_MOD_MASK_CONTROL;
 	bool shift = event->state & (XCB_MOD_MASK_SHIFT | XCB_MOD_MASK_LOCK);
@@ -522,6 +595,9 @@ void handleKeyPress(xcb_key_press_event_t *event) {
 			copyToClipboard(globalDocument->data, globalDocument->cursor, globalDocument->selection);
 		} else if (keysym == XK_v) {
 			copyFromClipboard(globalDocument);
+		} else if (keysym == XK_x) {
+			copyToClipboard(globalDocument->data, globalDocument->cursor, globalDocument->selection);
+			insert(globalDocument, "", 0);
 		} else if (keysym == XK_s) {
 			save(globalDocument);
 		} else if (keysym == XK_r) {
@@ -534,6 +610,20 @@ void handleKeyPress(xcb_key_press_event_t *event) {
 		} else if (keysym == XK_Right) {
 			if (shift) moveSelection(globalDocument, globalDocument->selection+1);
 			else moveCursor(globalDocument, globalDocument->cursor+1);
+		} else if (keysym == XK_Up) {
+			if (shift) moveSelection(globalDocument, moveLineUp(
+				globalDocument->data, globalDocument->selection, globalDocument->length
+			));
+			else moveCursor(globalDocument, moveLineUp(
+				globalDocument->data, globalDocument->cursor, globalDocument->length
+			));
+		} else if (keysym == XK_Down) {
+			if (shift) moveSelection(globalDocument, moveLineDown(
+				globalDocument->data, globalDocument->selection, globalDocument->length
+			));
+			else moveCursor(globalDocument, moveLineDown(
+				globalDocument->data, globalDocument->cursor, globalDocument->length
+			));
 		} else if (keysym == XK_BackSpace) {
 			if (globalDocument->cursor == globalDocument->selection) {
 				moveSelection(globalDocument, globalDocument->selection-1);
@@ -552,10 +642,12 @@ void handleKeyPress(xcb_key_press_event_t *event) {
 			insert(globalDocument, &c, 1);
 		};
 	};
-}
-
-void handleSelectionRequest(xcb_selection_request_event_t *event) {
-	(void) event;
+	if (
+		initialSelection != globalDocument->selection
+		&& isPositionOutsideBounds(globalDocument, globalDocument->selection)
+	) {
+		globalDocument->scroll = startOfLine(globalDocument->data, globalDocument->selection);
+	};
 }
 
 xcb_keysym_t getKeysym(xcb_keycode_t keycode) {
