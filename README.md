@@ -1,5 +1,5 @@
 # texi
-A minimalist lightweight ascii text editor, an attempt to
+A minimalist and lightweight ascii text editor, an attempt to
 solve some issues I had with other text editors.
 
 ## Usage
