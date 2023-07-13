@@ -14,6 +14,8 @@
 
 #include "clipboard.h"
 
+#define DARKMODE
+
 typedef struct Document doc_t;
 
 typedef void (*event_handler_t)(xcb_generic_event_t *);
@@ -94,8 +96,13 @@ void setup(char *windowTitle) {
 	connection = xcb_connect(NULL, NULL);
 	xcb_screen_t *screen = xcb_setup_roots_iterator(xcb_get_setup(connection)).data;
 	root = screen->root;
+	#ifdef DARKMODE
+	bg = screen->black_pixel;
+	fg = screen->white_pixel;
+	#else
 	bg = screen->white_pixel;
 	fg = screen->black_pixel;
+	#endif
 	
 	xcb_intern_atom_reply_t* atom_reply = xcb_intern_atom_reply(
 		connection, xcb_intern_atom(connection, 0, 16, "WM_DELETE_WINDOW"), 0
@@ -258,6 +265,7 @@ doc_t *load(doc_t *document, char *path) {
 		};
 	};
 	die("Unable to create document!");
+	return NULL;
 }
 
 void save(doc_t *document) {
@@ -415,7 +423,6 @@ int moveLineUp(char *d, int i, int length) {
 
 int moveLineDown(char *d, int i, int length) {
 	int old = i;
-	int subline = getSubline(d, i);
 	i = startOfLine(d, i);
 	int w = 0;
 	while (i < old) {
@@ -638,7 +645,7 @@ void handleKeyPress(xcb_key_press_event_t *event) {
 		} else if (keysym == XK_Tab) {
 			insert(globalDocument, "\t", 1);
 		} else if (keysym >= XK_space && keysym <= XK_asciitilde) {
-			char c = shift ? asciiupper(keysym) : keysym;
+			char c = shift ? asciiupper(keysym) : (char) keysym;
 			insert(globalDocument, &c, 1);
 		};
 	};

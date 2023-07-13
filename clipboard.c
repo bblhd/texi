@@ -22,7 +22,7 @@ struct {
 	xcb_window_t window;
 	
 	char *source;
-	size_t length;
+	int length;
 } clipboard;
 
 xcb_atom_t getAtomReply(xcb_intern_atom_cookie_t cookie) {
