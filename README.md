@@ -31,6 +31,6 @@ by running `make install` as root. It can be uninstalled with
 - Thanks to to [jtanx](https://github.com/jtanx) for their
 [libclipboard](https://github.com/jtanx/libclipboard)
 library which I borrowed liberally from.
-- And also to tale-cohomology for their Stack Overflow
+- And also to étale-cohomology for their Stack Overflow
 [answer](https://stackoverflow.com/a/72977399) about
 getting started with the clipboard.
