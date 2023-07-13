@@ -40,14 +40,13 @@ void handleButtonRelease(xcb_button_release_event_t *event);
 void handleKeyPress(xcb_key_press_event_t *event);
 
 void action_quit(doc_t *);
+void action_save(doc_t *);
+void action_reload(doc_t *);
 void action_selectAll(doc_t *);
 
 void action_copy(doc_t *);
 void action_paste(doc_t *);
 void action_cut(doc_t *);
-
-void action_save(doc_t *);
-void action_reload(doc_t *);
 
 void action_selectLeft(doc_t *);
 void action_selectRight(doc_t *);
@@ -69,7 +68,6 @@ void save(doc_t *document);
 int lengthen(doc_t *document, int length);
 void moveCursor(doc_t *document, int where);
 void moveSelection(doc_t *document, int where);
-
 void insert(doc_t *document, char *data, int length);
 void doInsertAction(doc_t *document, int where, int length, char *data);
 void doDeleteAction(doc_t *document, int from, int to);
@@ -148,7 +146,7 @@ struct Keybinding {
 	{action_selectUp, .shift=true, .sym = XK_Up},
 	{action_selectDown, .shift=true, .sym = XK_Down},
 	
-	{action_backspace, .sym = XK_Delete},
+	{action_backspace, .sym = XK_BackSpace},
 	{action_newline, .sym = XK_Return},
 	{action_tab, .sym = XK_Tab},
 	

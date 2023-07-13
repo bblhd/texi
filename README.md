@@ -20,7 +20,8 @@ good substitute.
 
 ## Installing
 Compile using `make` and then install it to /usr/local/bin
-by running `make install` as root.
+by running `make install` as root. It can be uninstalled with
+`make uninstall`, also run as root.
 
 ### Requirements
 - xcb

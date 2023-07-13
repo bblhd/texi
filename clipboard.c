@@ -72,17 +72,20 @@ int clipboard_get(char *str, int length, int offset) {
 		NULL
 	);
 	
-	if (reply && xcb_get_property_value_length(reply) > 0) {
-		length = length < xcb_get_property_value_length(reply) ? length : xcb_get_property_value_length(reply);
-		memcpy(str, xcb_get_property_value(reply), length);
-		free(reply);
-	} else if (clipboard.source && clipboard.length > offset) {
-		length = length < clipboard.length-offset ? length : clipboard.length-offset;
-		memcpy(str, clipboard.source, length);
-	} else {
-		length = 0;
+	char *news = "";
+	int newl = 0;
+	if (reply) {
+		news = xcb_get_property_value(reply);
+		newl = xcb_get_property_value_length(reply);
 	}
+	if (newl == 0 && clipboard.source && clipboard.length > offset) {
+		news = clipboard.source+offset;
+		newl = clipboard.length-offset;
+	}
+	length = length > newl ? newl : length;
+	memcpy(str, news, length);
 	
+	if (reply) free(reply);
 	xcb_delete_property(clipboard.connection, clipboard.window, property);
 	return length;
 }
