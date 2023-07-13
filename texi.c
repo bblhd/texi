@@ -26,25 +26,69 @@ struct Document {
 	int scroll, cursor, selection;
 };
 
-doc_t *load(doc_t *document, char *path);
-void save(doc_t *document);
-
-void insert(doc_t *document, char *data, int length);
-void moveCursor(doc_t *document, int where);
-void moveSelection(doc_t *document, int where);
-int lengthen(doc_t *document, int length);
-int scrollByLines(doc_t *document, int position, int lines);
-
 void setup();
 void cleanup();
 void events();
 void draw(doc_t *document);
-int findPositionIn(doc_t *document, int x, int y);
+
+void glyph(char c, int x, int y);
+int advance(char c);
 
 void handleClientMessage(xcb_client_message_event_t *event);
 void handleButtonPress(xcb_button_press_event_t *event);
 void handleButtonRelease(xcb_button_release_event_t *event);
 void handleKeyPress(xcb_key_press_event_t *event);
+
+void action_quit(doc_t *);
+void action_selectAll(doc_t *);
+
+void action_copy(doc_t *);
+void action_paste(doc_t *);
+void action_cut(doc_t *);
+
+void action_save(doc_t *);
+void action_reload(doc_t *);
+
+void action_selectLeft(doc_t *);
+void action_selectRight(doc_t *);
+void action_selectUp(doc_t *);
+void action_selectDown(doc_t *);
+
+void action_cursorLeft(doc_t *);
+void action_cursorRight(doc_t *);
+void action_cursorUp(doc_t *);
+void action_cursorDown(doc_t *);
+
+void action_backspace(doc_t *);
+void action_newline(doc_t *);
+void action_tab(doc_t *document);
+
+doc_t *load(doc_t *document, char *path);
+void save(doc_t *document);
+
+int lengthen(doc_t *document, int length);
+void moveCursor(doc_t *document, int where);
+void moveSelection(doc_t *document, int where);
+
+void insert(doc_t *document, char *data, int length);
+void doInsertAction(doc_t *document, int where, int length, char *data);
+void doDeleteAction(doc_t *document, int from, int to);
+
+void copyFromClipboardTo(doc_t *document);
+void copyToClipboardFrom(doc_t *document);
+
+int isPositionOutsideBounds(doc_t *document, int p);
+int findPositionIn(doc_t *document, int mx, int y);
+
+void scrollUp(doc_t *);
+void scrollDown(doc_t *);
+int moveLineUp(char *d, int i, int length);
+int moveLineDown(char *d, int i, int length);
+
+int advanceSubline(char *d, int i, int length);
+int findWhitespaceFrom(char *d, int i);
+int startOfLine(char *d, int i);
+int getSubline(char *d, int i);
 
 void setColor(uint32_t fg, uint32_t bg);
 xcb_keysym_t getKeysym(xcb_keycode_t keycode);
@@ -57,11 +101,10 @@ int dontExit = 1;
 
 xcb_connection_t *connection;
 xcb_gcontext_t graphics;
-xcb_font_t font;
 xcb_window_t root;
+xcb_key_symbols_t *keySymbols;
 xcb_window_t window;
 xcb_atom_t wm_delete_window_atom;
-xcb_key_symbols_t *keySymbols;
 uint32_t bg, fg;
 
 char *defaultstr = "This is a scratch document, it isn't from a file, and thus will not be saved.";
@@ -81,6 +124,37 @@ const event_handler_t eventHandlers[] = {
 	[XCB_SELECTION_REQUEST] = (event_handler_t) clipboard_selectionRequest,
 };
 
+struct Keybinding {
+	void (*action)(doc_t *);
+	xcb_keysym_t sym;
+	bool shift;
+	bool control;
+} keys[] = {
+	{action_quit, .control=true, .sym = XK_q},
+	{action_selectAll, .control=true, .sym = XK_a},
+	{action_copy, .control=true, .sym = XK_c},
+	{action_paste, .control=true, .sym = XK_v},
+	{action_cut, .control=true, .sym = XK_x},
+	{action_save, .control=true, .sym = XK_s},
+	{action_reload, .control=true, .sym = XK_r},
+	
+	{action_cursorLeft, .sym = XK_Left},
+	{action_cursorRight, .sym = XK_Right},
+	{action_cursorUp, .sym = XK_Up},
+	{action_cursorDown, .sym = XK_Down},
+	
+	{action_selectLeft, .shift=true, .sym = XK_Left},
+	{action_selectRight, .shift=true, .sym = XK_Right},
+	{action_selectUp, .shift=true, .sym = XK_Up},
+	{action_selectDown, .shift=true, .sym = XK_Down},
+	
+	{action_backspace, .sym = XK_Delete},
+	{action_newline, .sym = XK_Return},
+	{action_tab, .sym = XK_Tab},
+	
+	{NULL}
+};
+
 doc_t *globalDocument;
 
 int main(int argc, char **argv) {
@@ -95,6 +169,7 @@ int main(int argc, char **argv) {
 void setup(char *windowTitle) {
 	connection = xcb_connect(NULL, NULL);
 	xcb_screen_t *screen = xcb_setup_roots_iterator(xcb_get_setup(connection)).data;
+	
 	root = screen->root;
 	#ifdef DARKMODE
 	bg = screen->black_pixel;
@@ -114,7 +189,7 @@ void setup(char *windowTitle) {
 	
 	char *fontname = "-b&h-lucida-medium-r-normal-sans-10------iso10646-1";
 	//char *fontname = "fixed";
-	font = xcb_generate_id(connection);
+	xcb_font_t font = xcb_generate_id(connection);
 	xcb_open_font(connection, font, strlen(fontname), fontname);
 	
 	xcb_create_gc(
@@ -129,7 +204,7 @@ void setup(char *windowTitle) {
 		advancesCookies[c-0x20] = xcb_query_text_extents(
 			connection, font, 1, (xcb_char2b_t[]){{0,c}}
 		);
-	};
+	}
 	xcb_close_font(connection, font);
 	for (char c = 0x20; c < 0x7F; c++) {
 		xcb_query_text_extents_reply_t *reply = xcb_query_text_extents_reply(
@@ -139,9 +214,12 @@ void setup(char *windowTitle) {
 		if (lineoffset < reply->font_ascent) lineoffset = reply->font_ascent;
 		if (lineheight < reply->font_ascent + reply->font_descent) {
 			lineheight = reply->font_ascent + reply->font_descent;
-		};
+		}
 		free(reply);
-	};
+	}
+	
+	keySymbols = xcb_key_symbols_alloc(connection);
+	if (!keySymbols) die("Could not access key symbols!");
 	
 	window = xcb_generate_id(connection);
 	xcb_create_window(
@@ -167,8 +245,6 @@ void setup(char *windowTitle) {
 		strlen(windowTitle), windowTitle
 	);
 	
-	keySymbols = xcb_key_symbols_alloc(connection);
-	
 	clipboard_init(connection, window, "TEXI_CLIPBOARD");
 	
 	xcb_flush(connection);
@@ -176,8 +252,8 @@ void setup(char *windowTitle) {
 
 void cleanup() {
 	xcb_key_symbols_free(keySymbols);
-	xcb_close_font(connection, font);
 	xcb_destroy_window(connection, window);
+	
 	xcb_flush(connection);
 	xcb_disconnect(connection);
 }
@@ -205,7 +281,7 @@ void glyph(char c, int x, int y) {
 			connection, 4, window, graphics,
 			x, lineoffset+y, buffer
 		);
-	};
+	}
 }
 
 int advance(char c) {
@@ -217,235 +293,7 @@ int advance(char c) {
 		return advanceLookupTable[hexdigit(c)-0x20]
 			+ advanceLookupTable[hexdigit(((unsigned char)c)<<4)-0x20]
 			+ advanceLookupTable['['-0x20] + advanceLookupTable[']'-0x20];
-	};
-}
-
-int lengthen(doc_t *document, int length) {
-	document->length += length;
-	if (document->length > document->size) {
-		document->size = (document->length + 4095) & ~4095;
-		document->data = realloc(document->data, document->size);
-		if (!document->data) return 0;
-	} else if (document->size == 0 || !document->data) {
-		document->size = 4096;
-		document->data = realloc(document->data, document->size);
-		if (!document->data) return 0;
-	};
-	return document->size;
-}
-
-doc_t *load(doc_t *document, char *path) {
-	if (!document) document = calloc(1,sizeof(doc_t));
-	document->scroll = 0;
-	document->cursor = 0;
-	document->selection = 0;
-	if (document) {
-		if (!path && !document->path) {
-			if (lengthen(document, strlen(defaultstr))) {
-				memcpy(document->data, defaultstr, strlen(defaultstr));
-				return document;
-			};
-		} else {
-			if (!document->path) document->path = path;
-			FILE *file = fopen(document->path, "r");
-			if (file) {
-				fseek(file, 0, SEEK_END);
-				if (lengthen(document, ftell(file))) {
-					rewind(file);
-					fread(
-						document->data, sizeof(char),
-						document->length, file
-					);
-					fclose(file);
-				};
-			} else if (!lengthen(document, 0)) {
-				die("Unable to create document!");
-			}
-			return document;
-		};
-	};
-	die("Unable to create document!");
-	return NULL;
-}
-
-void save(doc_t *document) {
-	if (!document->path) return;
-	FILE *file = fopen(document->path, "w");
-	if (!file) return;
-	fwrite(document->data, sizeof(char), document->length, file);
-	fclose(file);
-}
-
-void moveCursor(doc_t *document, int where) {
-	document->selection = where;
-	document->cursor = where;
-}
-
-void moveSelection(doc_t *document, int where) {
-	document->selection = where;
-}
-
-void doInsertAction(doc_t *document, int where, int length, char *data);
-void doDeleteAction(doc_t *document, int from, int to);
-
-void insert(doc_t *document, char *data, int length) {
-	if (document->cursor != document->selection) {
-		doDeleteAction(document, document->cursor, document->selection);
-	};
-	if (data && length > 0) {
-		doInsertAction(document, document->cursor, length, data);
-	};
-}
-
-void doInsertAction(doc_t *document, int where, int length, char *data) {
-	lengthen(document, length);
-	memmove(
-		document->data + where + length,
-		document->data + where,
-		document->length - where - length
-	);
-	memcpy(document->data + where, data, length);
-	if (document->cursor >= where) document->cursor += length;
-	if (document->selection >= where) document->selection += length;
-}
-
-void doDeleteAction(doc_t *document, int from, int to) {
-	int where = from < to ? from : to;
-	int length = from < to ? to-from : from-to;
-	memmove(
-		document->data + where,
-		document->data + where + length,
-		document->length - where - length
-	);
-	lengthen(document, -length);
-	if (document->cursor >= where+length) document->cursor -= length;
-	else if (document->cursor >= where) document->cursor = where;
-	if (document->selection >= where+length) document->selection -= length;
-	else if (document->selection >= where) document->selection = where;
-}
-
-int getSubline(char *d, int i) {
-	int sublines = 0;
-	int x = 0;
-	if (d[i] == '\n') i--;
-	while (i > 0 && d[i] != '\n') {
-		x += advance(d[i]);
-		if (x >= winwidth) {
-			sublines++;
-			x = 0;
-		} else i--;
-	};
-	return sublines;
-}
-
-int startOfLine(char *d, int i) {
-	int x = 0;
-	if (d[i] == '\n') i--;
-	while (i >= 0 && d[i] != '\n') {
-		x += advance(d[i]);
-		if (x >= winwidth) {
-			x = 0;
-		} else i--;
-	};
-	return i+1;
-}
-
-int findWhitespaceFrom(char *d, int i) {
-	int old = i;
-	while (d[i] == '\t' || d[i] == ' ') i++;
-	return i-old;
-}
-
-int advanceSubline(char *d, int i, int length) {
-	int old = i;
-	int x = 0;
-	while (i < length && d[i] != '\n' && x + advance(d[i]) < winwidth) {
-		x += advance(d[i++]);
-	};
-	if (i >= length) return old;
-	else if (d[i] == '\n') return i+1;
-	else return i;
-}
-
-void scrollDown(doc_t *document) {
-	document->scroll = advanceSubline(document->data, document->scroll, document->length);
-}
-
-void scrollUp(doc_t *document) {
-	if (document->scroll == 0) return;
-	char *d = document->data;
-	int i = document->scroll;
-	int subline = getSubline(d, i);
-	i = startOfLine(d, i);
-	if (subline == 0) {
-		if (i > 0) {
-			subline = getSubline(d, i-1);
-			i = startOfLine(d, i-1);
-		};
-	} else subline--;
-	while (subline > 0) {
-		i = advanceSubline(d, i, document->length);
-		subline--;
-	};
-	document->scroll = i;
-}
-
-int moveLineUp(char *d, int i, int length) {
-	int old = i;
-	int subline = getSubline(d, i);
-	i = startOfLine(d, i);
-	int j = i, w = 0;
-	while (j < old) {
-		w += advance(d[j]);
-		if (w >= winwidth) w = 0;
-		else j++;
 	}
-	if (w + advance(d[j]) >= winwidth) w = 0;
-	if (subline == 0) {
-		if (i > 0) {
-			subline = getSubline(d, i-1);
-			i = startOfLine(d, i-1);
-		};
-	} else subline--;
-	while (subline > 0) {
-		i = advanceSubline(d, i, length);
-		subline--;
-	};
-	int x = 0;
-	while (i < length && d[i] != '\n' && x < w) {
-		x += advance(d[i]);
-		if (x >= winwidth) {
-			x = 0;
-		} else i++;
-	};
-	return i;
-}
-
-int moveLineDown(char *d, int i, int length) {
-	int old = i;
-	i = startOfLine(d, i);
-	int w = 0;
-	while (i < old) {
-		w += advance(d[i]);
-		if (w >= winwidth) w = 0;
-		else i++;
-	};
-	if (w + advance(d[i]) >= winwidth) w = 0;
-	int x = w;
-	do {
-		x += advance(d[i]);
-		if (d[i] == '\n' || x >= winwidth) {
-			if (d[i] == '\n') i++;
-			x = 0;
-		} else i++;
-	} while (x != 0);
-	while (i < length && d[i] != '\n' && x < w) {
-		x += advance(d[i]);
-		if (x >= winwidth) {
-			x = 0;
-		} else i++;
-	};
-	return i;
 }
 
 void events() {
@@ -500,48 +348,16 @@ void draw(doc_t *document) {
 				glyph(' ', x, y);
 				if (drawc) drawCursor(x,y);
 				i++;
-			};
+			}
 			y += lineheight;
 			x = 0;
 		} else {
 			glyph(d[i], x, y);
 			if (drawc) drawCursor(x,y);
 			x += advance(d[i++]);
-		};
-	};
+		}
+	}
 	if (i == cur && cur == sel) drawCursor(x,y);
-}
-
-int findPositionIn(doc_t *document, int mx, int y) {
-	int x = 0;
-	char *d = document->data;
-	int i = document->scroll;
-	while (i < document->length && (
-		y >= lineheight || (y >= 0 && d[i]!='\n' && mx >= x + advance(d[i]))
-	)) {
-		x += advance(d[i]);
-		if (d[i] == '\n' || x >= winwidth) {
-			if (d[i] == '\n') i++;
-			y -= lineheight;
-			x = 0;
-		} else i++;
-	};
-	return i;
-}
-
-int isPositionOutsideBounds(doc_t *document, int p) {
-	int x = 0, y = 0;
-	char *d = document->data;
-	int i = document->scroll;
-	while (i < document->length && y < winheight && i != p) {
-		x += advance(d[i]);
-		if (d[i] == '\n' || x >= winwidth) {
-			if (d[i] == '\n') i++;
-			y += lineheight;
-			x = 0;
-		} else i++;
-	};
-	return i != p;
 }
 
 void handleClientMessage(xcb_client_message_event_t *event) {
@@ -559,7 +375,31 @@ void handleButtonPress(xcb_button_press_event_t *event) {
 	} else if (event->detail == 4) {
 		scrollUp(globalDocument);
 		scrollUp(globalDocument);
-	};
+	}
+}
+
+void handleKeyPress(xcb_key_press_event_t *event) {
+	xcb_keysym_t keysym = xcb_key_symbols_get_keysym(keySymbols, event->detail, 0);
+	int initialSelection = globalDocument->selection;
+	
+	bool control = event->state & XCB_MOD_MASK_CONTROL;
+	bool shift = event->state & (XCB_MOD_MASK_SHIFT | XCB_MOD_MASK_LOCK);
+	
+	if (!control && keysym >= XK_space && keysym <= XK_asciitilde) {
+		char c = shift ? asciiupper(keysym) : (char) keysym;
+		insert(globalDocument, &c, 1);
+	} else for (struct Keybinding *key = keys; key->action; key++) {
+		if (keysym == key->sym && control == key->control && shift == key->shift) {
+			key->action(globalDocument);
+		}
+	}
+	
+	if (
+		initialSelection != globalDocument->selection
+		&& isPositionOutsideBounds(globalDocument, globalDocument->selection)
+	) globalDocument->scroll = startOfLine(
+		globalDocument->data, globalDocument->selection
+	);
 }
 
 void handleButtonRelease(xcb_button_release_event_t *event) {
@@ -567,17 +407,164 @@ void handleButtonRelease(xcb_button_release_event_t *event) {
 		moveSelection(globalDocument, 
 			findPositionIn(globalDocument, event->event_x, event->event_y)
 		);
-	};
+	}
 }
 
-void copyToClipboard(char *d, int from, int to) {
+void action_quit(doc_t *document) {(void) document; dontExit = 0;}
+
+void action_selectAll(doc_t *doc) {moveCursor(doc, 0); moveSelection(doc, doc->length);}
+
+void action_copy(doc_t *document) {copyToClipboardFrom(document);}
+void action_paste(doc_t *document) {copyFromClipboardTo(document);}
+void action_cut(doc_t *doc) {copyToClipboardFrom(doc); insert(doc, "", 0);}
+
+void action_save(doc_t *document) {save(document);}
+void action_reload(doc_t *document) {load(document, NULL);}
+
+void action_selectLeft(doc_t *doc) {moveSelection(doc, doc->selection-1);}
+void action_cursorLeft(doc_t *doc) {moveCursor(doc, doc->cursor-1);}
+void action_selectRight(doc_t *doc) {moveSelection(doc, doc->selection+1);}
+void action_cursorRight(doc_t *doc) {moveCursor(doc, doc->cursor+1);}
+
+void action_selectUp(doc_t *doc) {
+	moveSelection(doc, moveLineUp(doc->data, doc->selection, doc->length));
+}
+void action_cursorUp(doc_t *doc) {
+	moveCursor(doc, moveLineUp(doc->data, doc->cursor, doc->length));
+}
+void action_selectDown(doc_t *doc) {
+	moveSelection(doc, moveLineDown(doc->data, doc->selection, doc->length));
+}
+void action_cursorDown(doc_t *doc) {
+	moveCursor(doc, moveLineDown(doc->data, doc->cursor, doc->length));
+}
+
+void action_backspace(doc_t *doc) {
+	if (doc->cursor == doc->selection) moveSelection(doc, doc->selection-1);
+	insert(doc, "", 0);
+}
+
+void action_newline(doc_t *doc) {
+	int where = doc->cursor < doc->selection ? doc->cursor : doc->selection;
+	where = startOfLine(doc->data, where);
+	insert(doc, "\n", 1);
+	insert(doc, doc->data+where, findWhitespaceFrom(doc->data, where));
+}
+
+void action_tab(doc_t *document) {
+	insert(document, "\t", 1);
+}
+doc_t *load(doc_t *document, char *path) {
+	if (!document) document = calloc(1,sizeof(doc_t));
+	document->scroll = 0;
+	document->cursor = 0;
+	document->selection = 0;
+	if (document) {
+		if (!path && !document->path) {
+			if (lengthen(document, strlen(defaultstr))) {
+				memcpy(document->data, defaultstr, strlen(defaultstr));
+				return document;
+			}
+		} else {
+			if (!document->path) document->path = path;
+			FILE *file = fopen(document->path, "r");
+			if (file) {
+				fseek(file, 0, SEEK_END);
+				if (lengthen(document, ftell(file))) {
+					rewind(file);
+					fread(
+						document->data, sizeof(char),
+						document->length, file
+					);
+					fclose(file);
+				}
+			} else if (!lengthen(document, 0)) {
+				die("Unable to create document!");
+			}
+			return document;
+		}
+	}
+	die("Unable to create document!");
+	return NULL;
+}
+
+void save(doc_t *document) {
+	if (!document->path) return;
+	FILE *file = fopen(document->path, "w");
+	if (!file) return;
+	fwrite(document->data, sizeof(char), document->length, file);
+	fclose(file);
+}
+
+int lengthen(doc_t *document, int length) {
+	document->length += length;
+	if (document->length > document->size) {
+		document->size = (document->length + 4095) & ~4095;
+		document->data = realloc(document->data, document->size);
+		if (!document->data) return 0;
+	} else if (document->size == 0 || !document->data) {
+		document->size = 4096;
+		document->data = realloc(document->data, document->size);
+		if (!document->data) return 0;
+	}
+	return document->size;
+}
+
+void moveCursor(doc_t *document, int where) {
+	document->selection = where;
+	document->cursor = where;
+}
+
+void moveSelection(doc_t *document, int where) {
+	document->selection = where;
+}
+
+void insert(doc_t *document, char *data, int length) {
+	if (document->cursor != document->selection) {
+		doDeleteAction(document, document->cursor, document->selection);
+	}
+	if (data && length > 0) {
+		doInsertAction(document, document->cursor, length, data);
+	}
+}
+
+void doInsertAction(doc_t *document, int where, int length, char *data) {
+	lengthen(document, length);
+	memmove(
+		document->data + where + length,
+		document->data + where,
+		document->length - where - length
+	);
+	memcpy(document->data + where, data, length);
+	if (document->cursor >= where) document->cursor += length;
+	if (document->selection >= where) document->selection += length;
+}
+
+void doDeleteAction(doc_t *document, int from, int to) {
+	int where = from < to ? from : to;
+	int length = from < to ? to-from : from-to;
+	memmove(
+		document->data + where,
+		document->data + where + length,
+		document->length - where - length
+	);
+	lengthen(document, -length);
+	if (document->cursor >= where+length) document->cursor -= length;
+	else if (document->cursor >= where) document->cursor = where;
+	if (document->selection >= where+length) document->selection -= length;
+	else if (document->selection >= where) document->selection = where;
+}
+
+void copyToClipboardFrom(doc_t *document) {
+	int from = document->cursor;
+	int to = document->selection;
 	clipboard_set(
-		d + (from < to ? from : to),
+		document->data + (from < to ? from : to),
 		from < to ? to-from : from-to
 	);
 }
 
-void copyFromClipboard(doc_t *document) {
+void copyFromClipboardTo(doc_t *document) {
 	char buffer[1024];
 	int length,offset=0;
 	do {
@@ -587,78 +574,160 @@ void copyFromClipboard(doc_t *document) {
 	} while (length == 1024);
 }
 
-void handleKeyPress(xcb_key_press_event_t *event) {
-	xcb_keysym_t keysym = getKeysym(event->detail);
-	int initialSelection = globalDocument->selection;
-	
-	bool control = event->state & XCB_MOD_MASK_CONTROL;
-	bool shift = event->state & (XCB_MOD_MASK_SHIFT | XCB_MOD_MASK_LOCK);
-	
-	if (control) {
-		if (keysym == XK_a) {
-			moveCursor(globalDocument, 0);
-			moveSelection(globalDocument, globalDocument->length);
-		} else if (keysym == XK_c) {
-			copyToClipboard(globalDocument->data, globalDocument->cursor, globalDocument->selection);
-		} else if (keysym == XK_v) {
-			copyFromClipboard(globalDocument);
-		} else if (keysym == XK_x) {
-			copyToClipboard(globalDocument->data, globalDocument->cursor, globalDocument->selection);
-			insert(globalDocument, "", 0);
-		} else if (keysym == XK_s) {
-			save(globalDocument);
-		} else if (keysym == XK_r) {
-			load(globalDocument, NULL);
-		}
-	} else {
-		if (keysym == XK_Left) {
-			if (shift) moveSelection(globalDocument, globalDocument->selection-1);
-			else moveCursor(globalDocument, globalDocument->cursor-1);
-		} else if (keysym == XK_Right) {
-			if (shift) moveSelection(globalDocument, globalDocument->selection+1);
-			else moveCursor(globalDocument, globalDocument->cursor+1);
-		} else if (keysym == XK_Up) {
-			if (shift) moveSelection(globalDocument, moveLineUp(
-				globalDocument->data, globalDocument->selection, globalDocument->length
-			));
-			else moveCursor(globalDocument, moveLineUp(
-				globalDocument->data, globalDocument->cursor, globalDocument->length
-			));
-		} else if (keysym == XK_Down) {
-			if (shift) moveSelection(globalDocument, moveLineDown(
-				globalDocument->data, globalDocument->selection, globalDocument->length
-			));
-			else moveCursor(globalDocument, moveLineDown(
-				globalDocument->data, globalDocument->cursor, globalDocument->length
-			));
-		} else if (keysym == XK_BackSpace) {
-			if (globalDocument->cursor == globalDocument->selection) {
-				moveSelection(globalDocument, globalDocument->selection-1);
-			}; insert(globalDocument, "", 0);
-		} else if (keysym == XK_Return) {
-			int where = globalDocument->cursor < globalDocument->selection
-				? globalDocument->cursor : globalDocument->selection;
-			where = startOfLine(globalDocument->data, where);
-			int indent = findWhitespaceFrom(globalDocument->data, where);
-			insert(globalDocument, "\n", 1);
-			insert(globalDocument, globalDocument->data+where, indent);
-		} else if (keysym == XK_Tab) {
-			insert(globalDocument, "\t", 1);
-		} else if (keysym >= XK_space && keysym <= XK_asciitilde) {
-			char c = shift ? asciiupper(keysym) : (char) keysym;
-			insert(globalDocument, &c, 1);
-		};
-	};
-	if (
-		initialSelection != globalDocument->selection
-		&& isPositionOutsideBounds(globalDocument, globalDocument->selection)
-	) {
-		globalDocument->scroll = startOfLine(globalDocument->data, globalDocument->selection);
-	};
+int findPositionIn(doc_t *document, int mx, int y) {
+	int x = 0;
+	char *d = document->data;
+	int i = document->scroll;
+	while (i < document->length && (
+		y >= lineheight || (y >= 0 && d[i]!='\n' && mx >= x + advance(d[i]))
+	)) {
+		x += advance(d[i]);
+		if (d[i] == '\n' || x >= winwidth) {
+			if (d[i] == '\n') i++;
+			y -= lineheight;
+			x = 0;
+		} else i++;
+	}
+	return i;
 }
 
-xcb_keysym_t getKeysym(xcb_keycode_t keycode) {
-	return keySymbols ? xcb_key_symbols_get_keysym(keySymbols, keycode, 0) : 0;
+int isPositionOutsideBounds(doc_t *document, int p) {
+	int x = 0, y = 0;
+	char *d = document->data;
+	int i = document->scroll;
+	while (i < document->length && y < winheight && i != p) {
+		x += advance(d[i]);
+		if (d[i] == '\n' || x >= winwidth) {
+			if (d[i] == '\n') i++;
+			y += lineheight;
+			x = 0;
+		} else i++;
+	}
+	return i != p;
+}
+
+void scrollDown(doc_t *document) {
+	document->scroll = advanceSubline(document->data, document->scroll, document->length);
+}
+
+void scrollUp(doc_t *document) {
+	if (document->scroll == 0) return;
+	char *d = document->data;
+	int i = document->scroll;
+	int subline = getSubline(d, i);
+	i = startOfLine(d, i);
+	if (subline == 0) {
+		if (i > 0) {
+			subline = getSubline(d, i-1);
+			i = startOfLine(d, i-1);
+		}
+	} else subline--;
+	while (subline > 0) {
+		i = advanceSubline(d, i, document->length);
+		subline--;
+	}
+	document->scroll = i;
+}
+
+int moveLineUp(char *d, int i, int length) {
+	int old = i;
+	int subline = getSubline(d, i);
+	i = startOfLine(d, i);
+	int j = i, w = 0;
+	while (j < old) {
+		w += advance(d[j]);
+		if (w >= winwidth) w = 0;
+		else j++;
+	}
+	if (w + advance(d[j]) >= winwidth) w = 0;
+	if (subline == 0) {
+		if (i > 0) {
+			subline = getSubline(d, i-1);
+			i = startOfLine(d, i-1);
+		}
+	} else subline--;
+	while (subline > 0) {
+		i = advanceSubline(d, i, length);
+		subline--;
+	}
+	int x = 0;
+	while (i < length && d[i] != '\n' && x < w) {
+		x += advance(d[i]);
+		if (x >= winwidth) {
+			x = 0;
+		} else i++;
+	}
+	return i;
+}
+
+int moveLineDown(char *d, int i, int length) {
+	int old = i;
+	i = startOfLine(d, i);
+	int w = 0;
+	while (i < old) {
+		w += advance(d[i]);
+		if (w >= winwidth) w = 0;
+		else i++;
+	}
+	if (w + advance(d[i]) >= winwidth) w = 0;
+	int x = w;
+	do {
+		x += advance(d[i]);
+		if (d[i] == '\n' || x >= winwidth) {
+			if (d[i] == '\n') i++;
+			x = 0;
+		} else i++;
+	} while (x != 0);
+	while (i < length && d[i] != '\n' && x < w) {
+		x += advance(d[i]);
+		if (x >= winwidth) {
+			x = 0;
+		} else i++;
+	}
+	return i;
+}
+
+int getSubline(char *d, int i) {
+	int sublines = 0;
+	int x = 0;
+	if (d[i] == '\n') i--;
+	while (i > 0 && d[i] != '\n') {
+		x += advance(d[i]);
+		if (x >= winwidth) {
+			sublines++;
+			x = 0;
+		} else i--;
+	}
+	return sublines;
+}
+
+int startOfLine(char *d, int i) {
+	int x = 0;
+	if (d[i] == '\n') i--;
+	while (i >= 0 && d[i] != '\n') {
+		x += advance(d[i]);
+		if (x >= winwidth) {
+			x = 0;
+		} else i--;
+	}
+	return i+1;
+}
+
+int findWhitespaceFrom(char *d, int i) {
+	int old = i;
+	while (d[i] == '\t' || d[i] == ' ') i++;
+	return i-old;
+}
+
+int advanceSubline(char *d, int i, int length) {
+	int old = i;
+	int x = 0;
+	while (i < length && d[i] != '\n' && x + advance(d[i]) < winwidth) {
+		x += advance(d[i++]);
+	}
+	if (i >= length) return old;
+	else if (d[i] == '\n') return i+1;
+	else return i;
 }
 
 char asciiupper(char c) {
@@ -678,7 +747,7 @@ char asciiupper(char c) {
 		case '.': return '>';
 		case '/': return '?';
 		default: return c;
-	};
+	}
 }
 
 void setColor(uint32_t fg, uint32_t bg) {
