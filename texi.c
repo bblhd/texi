@@ -509,11 +509,15 @@ int lengthen(doc_t *document, int length) {
 }
 
 void moveCursor(doc_t *document, int where) {
+	if (where < 0) where = 0;
+	else if (where > document->length) where = document->length;
 	document->selection = where;
 	document->cursor = where;
 }
 
 void moveSelection(doc_t *document, int where) {
+	if (where < 0) where = 0;
+	else if (where > document->length) where = document->length;
 	document->selection = where;
 }
 
