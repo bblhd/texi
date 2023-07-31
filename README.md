@@ -1,4 +1,4 @@
-> This project has moved to [sourcehut](git.sr.ht/~machineflower/texi).
+> Development has moved to [sourcehut](git.sr.ht/~machineflower/texi).
 
 # texi
 A minimalist and lightweight ascii text editor, an attempt to
