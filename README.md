@@ -1,4 +1,4 @@
-> This project has moved to [sourcehut](https://git.sr.ht/~cxxvii/texi). Feel free to view, fork, etc here.
+> This project has moved to [sourcehut](https://git.sr.ht/~cxxvii/texi). Feel free to view, fork, etc here, but this repository will no longer be updated.
 
 # texi
 A minimalist and lightweight ascii text editor, an attempt to
